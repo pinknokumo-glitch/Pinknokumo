@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/screening-modes",
+    [string]$Branch = "agent/android-cloud-foundation",
     [switch]$RunWorkflow
 )
 
@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $sourceCommit = (& $git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the prepared commit." }
-$preparedCommits = @("e812e18a3899de0240aeffff662354344a96dcb3", $sourceCommit)
+$preparedCommits = @("f1d255f8d7f4327e4fb2781e88b27cb3e9d18152", $sourceCommit)
 
 $runtimeFiles = @(Get-ChildItem (Join-Path $root "work") -Filter "daily_report_*.json" -File -ErrorAction SilentlyContinue)
 $backupDir = Join-Path $root "data\publish-maintenance-backup"
@@ -58,8 +58,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add auto genres and manual screening preview" `
-    --body "Adds evidence-oriented threshold research, API-managed Japanese screening genres, bounded manual conditions, a non-persistent preview API, and Android auto/manual selection screens without placing secrets in the app.").Trim()
+    --title "Add secure cloud preferences and reproducible Android builds" `
+    --body "Adds a Supabase-backed, row-level-secured preference foundation with server-side validation and documentation. It also adds the Gradle Wrapper and fixes the Android Compose/JDK configuration so debug builds are reproducible with JDK 17. Secrets remain server-side and the daily LINE workflow is not started by this publication.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
