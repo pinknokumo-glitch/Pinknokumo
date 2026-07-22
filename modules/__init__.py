@@ -1,0 +1,2 @@
+"""StockAI application modules."""
+

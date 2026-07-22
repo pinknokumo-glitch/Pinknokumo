@@ -1,0 +1,5 @@
+backtest:
+  entry: next_open
+  holding_periods: [20, 60, 120]
+  minimum_trades: 10
+

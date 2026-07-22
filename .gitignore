@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+data/
+logs/*.log
+.pytest_cache/
+reports/*.json
+reports/charts/
+reports/logs/
+android/.gradle/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore
+

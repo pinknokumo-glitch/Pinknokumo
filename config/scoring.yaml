@@ -1,0 +1,13 @@
+expectation_score:
+  # 各指標を0〜100に正規化して重み付けします。
+  weights:
+    average_return: 0.40
+    win_rate: 0.25
+    max_drawdown: 0.20
+    sample_size: 0.15
+  targets:
+    average_return_percent: 10
+    win_rate_percent: 60
+    max_drawdown_percent: -15
+    sample_size: 50
+

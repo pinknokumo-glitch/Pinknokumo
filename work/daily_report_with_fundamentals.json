@@ -1,0 +1,107 @@
+{
+  "generated_at": "2026-07-20T16:52:10",
+  "health": {
+    "status": "ok",
+    "missing_tables": [],
+    "latest_price_date": "2026-07-17",
+    "price_age_days": 3,
+    "price_data_status": "current",
+    "watchlist_count": 1,
+    "portfolio_position_count": 0,
+    "database_date": "2026-07-20"
+  },
+  "top_rankings": [
+    {
+      "code": "72030",
+      "as_of_date": "2026-07-17",
+      "profile_name": "rsi_rebound",
+      "expectation_score": 51.6,
+      "grade": "C",
+      "summary": {
+        "trade_count": 208,
+        "average_return_percent": 0.835079626881684,
+        "median_return_percent": 2.321149364901476,
+        "win_rate_percent": 55.769230769230774,
+        "max_drawdown_percent": -30.032508127031754,
+        "average_mfe_percent": 12.723019233509037
+      }
+    },
+    {
+      "code": "72030",
+      "as_of_date": "2026-07-17",
+      "profile_name": "momentum",
+      "expectation_score": 50.8,
+      "grade": "C",
+      "summary": {
+        "trade_count": 163,
+        "average_return_percent": 0.5776290862956794,
+        "median_return_percent": 2.348299830922418,
+        "win_rate_percent": 56.44171779141104,
+        "max_drawdown_percent": -30.032508127031754,
+        "average_mfe_percent": 12.69803220580001
+      }
+    }
+  ],
+  "score_changes": [],
+  "recent_jobs": [
+    {
+      "id": 1,
+      "job_name": "daily_update",
+      "status": "success",
+      "details_json": "{\"updated\": [{\"code\": \"NIKKEI225\", \"ticker\": \"^N225\", \"daily_rows\": 6, \"start\": \"2026-07-10\"}, {\"code\": \"72030\", \"ticker\": \"7203.T\", \"daily_rows\": 6, \"start\": \"2026-07-10\"}], \"failed\": [], \"market_regimes\": [{\"code\": \"NIKKEI225\", \"current_regime\": \"bullish\", \"counts\": {\"bullish\": 699, \"neutral\": 408, \"bearish\": 115}}], \"watchlist_count\": 1, \"market_index_count\": 1}",
+      "started_at": "2026-07-20 06:12:20",
+      "finished_at": "2026-07-20 06:12:20",
+      "details": {
+        "updated": [
+          {
+            "code": "NIKKEI225",
+            "ticker": "^N225",
+            "daily_rows": 6,
+            "start": "2026-07-10"
+          },
+          {
+            "code": "72030",
+            "ticker": "7203.T",
+            "daily_rows": 6,
+            "start": "2026-07-10"
+          }
+        ],
+        "failed": [],
+        "market_regimes": [
+          {
+            "code": "NIKKEI225",
+            "current_regime": "bullish",
+            "counts": {
+              "bullish": 699,
+              "neutral": 408,
+              "bearish": 115
+            }
+          }
+        ],
+        "watchlist_count": 1,
+        "market_index_count": 1
+      }
+    }
+  ],
+  "market_regimes": [
+    {
+      "market_code": "NIKKEI225",
+      "trade_date": "2026-07-17",
+      "regime": "bullish",
+      "close": 64141.12109375,
+      "sma_short": 66662.766171875,
+      "sma_long": 56119.97236328125
+    }
+  ],
+  "watchlist": [
+    {
+      "code": "72030",
+      "note": "動作確認用",
+      "created_at": "2026-07-20 06:01:39"
+    }
+  ],
+  "portfolio": {
+    "total_market_value": 0.0,
+    "positions": []
+  }
+}

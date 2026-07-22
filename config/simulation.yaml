@@ -1,0 +1,4 @@
+simulation:
+  initial_capital: 3000000
+  max_positions: 1
+  position_size: 300000

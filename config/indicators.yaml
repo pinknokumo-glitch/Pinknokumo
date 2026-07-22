@@ -1,0 +1,31 @@
+indicators:
+  rsi:
+    enabled: true
+    method: wilder
+    period: 14
+    timeframes: [daily, weekly, monthly]
+  macd:
+    enabled: true
+    fast: 12
+    slow: 26
+    signal: 9
+    timeframes: [daily, weekly, monthly]
+  moving_average:
+    enabled: true
+    periods: [5, 25, 75, 200]
+    timeframes: [daily, weekly, monthly]
+  bollinger_bands:
+    enabled: true
+    period: 20
+    standard_deviations: 2
+  stochastic:
+    enabled: true
+    k_period: 14
+    d_period: 3
+  adx:
+    enabled: true
+    period: 14
+  atr:
+    enabled: true
+    period: 14
+

@@ -1,0 +1,119 @@
+active_profile: oversold
+
+profiles:
+  notification_demo:
+    description: 通知確認専用の緩和条件。本番判断には使用しない。
+    all:
+      - field: daily.rsi_14
+        operator: "<="
+        value: 60
+      - field: weekly.rsi_14
+        operator: "<="
+        value: 50
+      - field: monthly.rsi_14
+        operator: "<="
+        value: 50
+
+  oversold:
+    description: 日・週・月のRSIが売られ過ぎ水準にある銘柄
+    all:
+      - field: daily.rsi_14
+        operator: "<="
+        value: 30
+      - field: weekly.rsi_14
+        operator: "<="
+        value: 35
+      - field: monthly.rsi_14
+        operator: "<="
+        value: 40
+
+  momentum:
+    description: 25日移動平均を上回り、MACDがシグナルを上抜けた銘柄
+    all:
+      - field: daily.close
+        operator: ">"
+        value_from: daily.sma_25
+      - field: daily.macd
+        operator: ">"
+        value_from: daily.macd_signal
+
+  rsi_rebound:
+    description: RSIが30を上回り、前日より改善した銘柄
+    all:
+      - field: daily.rsi_14
+        operator: ">"
+        value: 30
+      - field: daily.rsi_14
+        operator: ">"
+        value_from: daily.rsi_14_previous
+
+  deep_value:
+    description: 財務指標とRSIを組み合わせた厳格な割安株候補
+    all:
+      - field: daily.rsi_14
+        operator: "<="
+        value: 30
+      - field: fundamental.per
+        operator: "<="
+        value: 12
+      - field: fundamental.pbr
+        operator: "<="
+        value: 1.0
+      - field: fundamental.roe
+        operator: ">="
+        value: 10
+
+  value:
+    description: 一般的な割安水準と財務健全性を満たす候補
+    all:
+      - field: daily.rsi_14
+        operator: "<="
+        value: 35
+      - field: fundamental.per
+        operator: "<="
+        value: 15
+      - field: fundamental.pbr
+        operator: "<="
+        value: 1.2
+      - field: fundamental.equity_ratio
+        operator: ">="
+        value: 40
+
+  high_dividend:
+    description: 直近12か月の実績配当と財務健全性を満たす高配当候補
+    all:
+      - field: fundamental.dividend_yield
+        operator: ">="
+        value: 4
+      - field: fundamental.equity_ratio
+        operator: ">="
+        value: 50
+      - field: fundamental.operating_cash_flow
+        operator: ">"
+        value: 0
+
+  growth:
+    description: 収益性と中期トレンドを両立する成長株候補
+    all:
+      - field: fundamental.roe
+        operator: ">="
+        value: 15
+      - field: fundamental.operating_margin
+        operator: ">="
+        value: 10
+      - field: daily.close
+        operator: ">"
+        value_from: daily.sma_75
+
+  swing:
+    description: 短中期の上向きモメンタムを確認する候補
+    all:
+      - field: daily.close
+        operator: ">"
+        value_from: daily.sma_25
+      - field: daily.macd
+        operator: ">"
+        value_from: daily.macd_signal
+      - field: daily.adx_14
+        operator: ">="
+        value: 20

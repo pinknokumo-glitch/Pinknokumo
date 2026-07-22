@@ -1,0 +1,5 @@
+hit_count_optimization:
+  target_min: 5
+  target_max: 20
+  default_field: daily.rsi_14
+  default_operator: "<="
