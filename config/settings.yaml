@@ -1,0 +1,31 @@
+database:
+  path: data/stockai.db
+
+providers:
+  yfinance:
+    enabled: true
+    suffix: ".T"
+    interval: "1d"
+    period: "10y"
+    auto_adjust: false
+    repair: true
+    retries: 3
+    retry_delay_seconds: 2
+    daily_update_overlap_days: 7
+  jquants:
+    enabled: true
+    api_key_env: JQUANTS_API_KEY
+    daily_financial_update: true
+
+resampling:
+  weekly_rule: W-FRI
+  monthly_rule: ME
+
+market_indices:
+  - code: NIKKEI225
+    ticker: ^N225
+
+application:
+  timezone: Asia/Tokyo
+  log_level: INFO
+  default_result_limit: 100

@@ -1,0 +1,7 @@
+market_regime:
+  short_moving_average: 50
+  long_moving_average: 200
+  labels:
+    bullish: bullish
+    bearish: bearish
+    neutral: neutral

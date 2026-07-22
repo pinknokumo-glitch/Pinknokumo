@@ -1,0 +1,8 @@
+notification:
+  line:
+    enabled: true
+    channel_access_token_env: LINE_CHANNEL_ACCESS_TOKEN
+    recipient_env: LINE_RECIPIENT_ID
+    max_candidates: 10
+    chart_public_url_template: "https://pinknokumo-glitch.github.io/Pinknokumo/charts/{code}.png"
+    max_chart_images: 3
