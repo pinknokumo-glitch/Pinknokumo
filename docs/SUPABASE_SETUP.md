@@ -16,6 +16,17 @@ This is the planned secure control plane for Android-to-cloud screening settings
 - `SUPABASE_SERVICE_ROLE_KEY` (GitHub Actions only)
 - `STOCKAI_USER_ID`
 
+Android also uses `SUPABASE_URL` and the public `SUPABASE_ANON_KEY`. Put these only in
+`android/local.properties` (which is ignored by Git):
+
+```properties
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-public-anon-key
+```
+
+The app does not store the email, password, or session after it closes. The password is
+used only for the sign-in request, and preference writes are restricted by RLS.
+
 ## Database preparation
 
 1. Create a Supabase Free project.

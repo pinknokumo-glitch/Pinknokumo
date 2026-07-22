@@ -16,8 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -86,6 +88,8 @@ private fun RankingScreen(onSelect: (String) -> Unit, onOperations: () -> Unit, 
 
 @Composable
 private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val cloud = remember { SupabaseClient() }
     var options by remember { mutableStateOf<ScreeningOptions?>(null) }
     var mode by remember { mutableStateOf("auto") }
     var genreId by remember { mutableStateOf<String?>(null) }
@@ -93,6 +97,34 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
     var hits by remember { mutableStateOf<List<ScreeningHit>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableIntStateOf(0) }
+    var cloudSession by remember { mutableStateOf<SupabaseSession?>(null) }
+    var cloudStatus by remember { mutableStateOf<String?>(null) }
+    var showLogin by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var cloudBusy by remember { mutableStateOf(false) }
+
+    fun currentPreference(): CloudPreference {
+        val loaded = options
+        val conditions = loaded?.manualFields?.mapNotNull { field ->
+            manualValues[field.field]?.toDoubleOrNull()?.let { value ->
+                ManualCondition(field.field, field.defaultOperator, value)
+            }
+        }.orEmpty()
+        return CloudPreference(mode, genreId, "all", if (mode == "manual") conditions else emptyList())
+    }
+
+    fun saveToCloud(session: SupabaseSession) {
+        cloudBusy = true
+        cloudStatus = null
+        val preference = currentPreference()
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { cloud.savePreference(session, preference) } }
+                .onSuccess { cloudStatus = "クラウドへ保存しました" }
+                .onFailure { cloudStatus = it.message }
+            cloudBusy = false
+        }
+    }
     LaunchedEffect(Unit) {
         runCatching { withContext(Dispatchers.IO) { ApiClient().screeningOptions() } }
             .onSuccess { loaded -> options = loaded; genreId = loaded.genres.firstOrNull()?.id }
@@ -123,7 +155,19 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
         TopAppBar(
             title = { Text("スクリーニング") },
             navigationIcon = { TextButton(onClick = onBack) { Text("戻る") } },
-            actions = { TextButton(onClick = { refreshToken++ }) { Text("更新") } },
+            actions = {
+                TextButton(
+                    enabled = !cloudBusy,
+                    onClick = {
+                        when {
+                            !cloud.isConfigured -> cloudStatus = "Supabaseの公開設定が未登録です"
+                            cloudSession == null -> showLogin = true
+                            else -> saveToCloud(cloudSession!!)
+                        }
+                    },
+                ) { Text(if (cloudBusy) "保存中" else "クラウド保存") }
+                TextButton(onClick = { refreshToken++ }) { Text("更新") }
+            },
         )
     }) { padding ->
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
@@ -165,6 +209,7 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                 }
                 item { Button(onClick = { refreshToken++ }) { Text("条件をプレビュー") } }
             }
+            cloudStatus?.let { item { Text(it, color = if (it.contains("保存しました")) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error) } }
             error?.let { item { Text("APIへ接続できません: $it", color = MaterialTheme.colorScheme.error) } }
             if (hits.isEmpty() && error == null) item { Text("一致する銘柄はありません") }
             items(hits) { hit ->
@@ -176,6 +221,54 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                 HorizontalDivider()
             }
         }
+    }
+    if (showLogin) {
+        AlertDialog(
+            onDismissRequest = { if (!cloudBusy) showLogin = false },
+            title = { Text("Supabaseへログイン") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("認証情報は端末に保存しません。ログイン後、現在の条件を保存します。")
+                    OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("メール") }, singleLine = true)
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("パスワード") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !cloudBusy,
+                    onClick = {
+                        cloudBusy = true
+                        cloudStatus = null
+                        val preference = currentPreference()
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    val session = cloud.signIn(email, password)
+                                    cloud.savePreference(session, preference)
+                                    session
+                                }
+                            }.onSuccess { session ->
+                                cloudSession = session
+                                password = ""
+                                showLogin = false
+                                cloudStatus = "クラウドへ保存しました"
+                            }.onFailure {
+                                password = ""
+                                cloudStatus = it.message
+                            }
+                            cloudBusy = false
+                        }
+                    },
+                ) { Text("ログインして保存") }
+            },
+            dismissButton = { TextButton(onClick = { showLogin = false; password = "" }) { Text("キャンセル") } },
+        )
     }
 }
 
