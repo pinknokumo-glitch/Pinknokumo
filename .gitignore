@@ -10,7 +10,9 @@ reports/charts/
 reports/logs/
 work/*.json
 android/.gradle/
-android/**/build/
+android/.idea/
+android/wrapper-init/
 android/local.properties
+android/**/build/
 *.jks
 *.keystore
