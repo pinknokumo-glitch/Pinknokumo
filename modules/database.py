@@ -165,6 +165,16 @@ class Database:
                 [provider, status, message, response_text],
             )
 
+    def was_notification_sent(self, provider: str, message: str) -> bool:
+        """Return whether the exact dated/candidate message has already been delivered."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """SELECT 1 FROM notification_log
+                   WHERE provider=? AND status='sent' AND message=? LIMIT 1""",
+                [provider, message],
+            ).fetchone()
+        return row is not None
+
     def add_to_watchlist(self, code: str, note: str | None = None) -> None:
         with self.connect() as conn:
             conn.execute(
