@@ -15,17 +15,17 @@ profiles:
         value: 50
 
   oversold:
-    description: 日・週・月のRSIが売られ過ぎ水準にある銘柄
+    description: 日・週・月のRSIが調整水準にある銘柄（通知候補を確保する緩和設定）
     all:
       - field: daily.rsi_14
         operator: "<="
-        value: 30
+        value: 60
       - field: weekly.rsi_14
         operator: "<="
-        value: 35
+        value: 50
       - field: monthly.rsi_14
         operator: "<="
-        value: 40
+        value: 50
 
   momentum:
     description: 25日移動平均を上回り、MACDがシグナルを上抜けた銘柄
