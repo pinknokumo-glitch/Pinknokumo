@@ -68,6 +68,7 @@ class Screener:
             "SELECT * FROM financial WHERE code=? ORDER BY disclosed_date DESC LIMIT 1", [code]
         ).fetchone()
         if financial and values.get("daily.close") is not None:
+            values["fundamental.disclosed_date"] = financial["disclosed_date"]
             trailing_dividends = None
             if daily_frame is not None and not daily_frame.empty:
                 cutoff = daily_frame["trade_date"].max() - pd.Timedelta(days=365)
