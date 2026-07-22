@@ -48,6 +48,11 @@ jobs:
       - name: Update, analyze, publish charts, and notify LINE
         run: python scripts/run_daily_pipeline.py --notify
 
+      - name: Notify LINE when the daily job fails
+        if: failure()
+        continue-on-error: true
+        run: python scripts/send_failure_notification.py
+
       - name: Save updated database
         if: always()
         uses: actions/cache/save@v5

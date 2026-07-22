@@ -34,6 +34,15 @@ class DatabaseTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.tempdir.cleanup()
 
+    def test_notification_duplicate_detection_only_counts_sent_messages(self) -> None:
+        message = "判定基準日: 2026-07-22\n銘柄: 72030"
+        self.assertFalse(self.db.was_notification_sent("line", message))
+        self.db.save_notification("line", "network_error", message)
+        self.assertFalse(self.db.was_notification_sent("line", message))
+        self.db.save_notification("line", "sent", message)
+        self.assertTrue(self.db.was_notification_sent("line", message))
+        self.assertFalse(self.db.was_notification_sent("line", message + " changed"))
+
     def test_watchlist_and_portfolio(self) -> None:
         self.db.add_to_watchlist("72030", "initial")
         self.db.add_to_watchlist("72030", "updated")

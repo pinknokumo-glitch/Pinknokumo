@@ -129,6 +129,9 @@ def main() -> int:
         message = format_screening_message(profile, hits, max_candidates, comments, screening_date)
         if warnings:
             message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
+        if database.was_notification_sent("line", message):
+            print("Notification: line / skipped_duplicate / candidates=0")
+            return 0
         result = notifier.send(message)
         database.save_notification(result.provider, result.status, message, result.response_text)
         print(f"Notification: {result.provider} / {result.status} / candidates=0")
@@ -146,6 +149,9 @@ def main() -> int:
                 message += f"\n\nほか{omitted}件（配信上限のため省略）"
             if warnings:
                 message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
+        if database.was_notification_sent("line", message):
+            print(f"Notification candidate {index + 1}/{len(delivery_hits)}: line / skipped_duplicate")
+            continue
         candidate_chart = chart_urls[index:index + 1]
         result = notifier.send(message, candidate_chart)
         database.save_notification(result.provider, result.status, message, result.response_text)
@@ -156,7 +162,7 @@ def main() -> int:
         )
         if result.status != "sent":
             break
-    return 0 if len(results) == len(delivery_hits) and all(result.status == "sent" for result in results) else 1
+    return 0 if all(result.status == "sent" for result in results) else 1
 
 
 if __name__ == "__main__":
