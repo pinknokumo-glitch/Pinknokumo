@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from modules.cloud_preferences import CloudPreferenceClient
+from modules.cloud_preferences import CloudPreferenceClient, apply_preference
 from modules.screening_options import ScreeningOptions
 
 
@@ -32,6 +32,23 @@ class CloudPreferenceTestCase(unittest.TestCase):
         self.assertEqual(manual.manual_conditions[0]["value"], 12)
         with self.assertRaises(ValueError):
             CloudPreferenceClient.validate({"mode": "auto", "genre_id": "missing"}, self.options)
+
+    def test_current_secret_key_is_not_used_as_a_bearer_token(self) -> None:
+        current = CloudPreferenceClient("https://example.supabase.co", "sb_secret_example", "user")
+        self.assertNotIn("Authorization", current.headers())
+        legacy = CloudPreferenceClient("https://example.supabase.co", "eyJlegacy", "user")
+        self.assertEqual(legacy.headers()["Authorization"], "Bearer eyJlegacy")
+
+    def test_preference_is_applied_without_mutating_repository_config(self) -> None:
+        source = {"active_profile": "value", "profiles": {"value": {"field": "fundamental.per"}}}
+        manual = CloudPreferenceClient.validate({
+            "mode": "manual", "manual_logic": "all",
+            "manual_conditions": [{"field": "fundamental.per", "operator": "<=", "value": 12}],
+        }, self.options)
+        resolved, profile = apply_preference(manual, self.options, source)
+        self.assertEqual(profile, "cloud_manual")
+        self.assertIn("cloud_manual", resolved["profiles"])
+        self.assertNotIn("cloud_manual", source["profiles"])
 
 
 if __name__ == "__main__":

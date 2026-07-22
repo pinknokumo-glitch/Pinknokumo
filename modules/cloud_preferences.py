@@ -38,9 +38,7 @@ class CloudPreferenceClient:
             f"{self.url}/rest/v1/screening_preferences?user_id=eq.{quote(self.user_id)}"
             "&select=mode,genre_id,manual_logic,manual_conditions&limit=1"
         )
-        request = Request(endpoint, headers={
-            "apikey": self.key, "Authorization": f"Bearer {self.key}", "Accept": "application/json",
-        })
+        request = Request(endpoint, headers=self.headers())
         try:
             with urlopen(request, timeout=15) as response:
                 rows = json.loads(response.read().decode("utf-8"))
@@ -49,6 +47,13 @@ class CloudPreferenceClient:
         if not rows:
             return None
         return self.validate(rows[0], options)
+
+    def headers(self) -> dict[str, str]:
+        """Support both current sb_secret keys and legacy JWT service-role keys."""
+        headers = {"apikey": self.key, "Accept": "application/json"}
+        if self.key.startswith("eyJ"):
+            headers["Authorization"] = f"Bearer {self.key}"
+        return headers
 
     @staticmethod
     def validate(raw: Mapping[str, object], options: ScreeningOptions) -> ScreeningPreference:
@@ -69,3 +74,25 @@ class CloudPreferenceClient:
             options.manual_rule(conditions, logic)
             genre_id = None
         return ScreeningPreference(mode, genre_id, logic, [dict(item) for item in conditions])
+
+
+def apply_preference(
+    preference: ScreeningPreference,
+    options: ScreeningOptions,
+    screening_config: Mapping[str, object],
+) -> tuple[dict[str, object], str]:
+    """Build an in-memory screening config without changing repository files."""
+    config = dict(screening_config)
+    profiles = dict(config.get("profiles") or {})
+    if preference.mode == "auto":
+        genres = {str(item["id"]): item for item in options.catalog()["genres"] if item["available"]}
+        genre = genres.get(preference.genre_id or "")
+        if genre is None:
+            raise ValueError("cloud genre_id is unavailable")
+        profile = str(genre["profile"])
+    else:
+        profile = "cloud_manual"
+        profiles[profile] = options.manual_rule(preference.manual_conditions, preference.manual_logic)
+    config["profiles"] = profiles
+    config["active_profile"] = profile
+    return config, profile

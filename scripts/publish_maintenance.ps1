@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-cloud-foundation",
+    [string]$Branch = "agent/supabase-app-integration",
     [switch]$RunWorkflow
 )
 
@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $sourceCommit = (& $git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the prepared commit." }
-$preparedCommits = @("f1d255f8d7f4327e4fb2781e88b27cb3e9d18152", $sourceCommit)
+$preparedCommits = @("6d1a64e1e848dddecbfb76cee69613a70c0dd0c2", $sourceCommit)
 
 $runtimeFiles = @(Get-ChildItem (Join-Path $root "work") -Filter "daily_report_*.json" -File -ErrorAction SilentlyContinue)
 $backupDir = Join-Path $root "data\publish-maintenance-backup"
@@ -58,8 +58,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add secure cloud preferences and reproducible Android builds" `
-    --body "Adds a Supabase-backed, row-level-secured preference foundation with server-side validation and documentation. It also adds the Gradle Wrapper and fixes the Android Compose/JDK configuration so debug builds are reproducible with JDK 17. Secrets remain server-side and the daily LINE workflow is not started by this publication.").Trim()
+    --title "Connect Android and daily runs to Supabase preferences" `
+    --body "Connects the Android screening settings screen to Supabase using user authentication and row-level security. Daily GitHub Actions runs now load the selected automatic genre or manual thresholds from Supabase, with safe fallback to repository defaults when cloud settings are unavailable. Credentials remain outside source control, and this publication does not start the LINE workflow.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

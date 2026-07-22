@@ -16,12 +16,14 @@ sys.path.insert(0, str(ROOT))
 from modules.daily_job import DailyUpdateJob  # noqa: E402
 from modules.ai_comment import AnalysisCommentary  # noqa: E402
 from modules.batch_backtest import BatchBacktester  # noqa: E402
+from modules.cloud_preferences import CloudPreferenceClient, apply_preference  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.github_publisher import GitHubPublisher  # noqa: E402
 from modules.notifier import LineNotifier, format_candidate_message, format_screening_message  # noqa: E402
 from modules.reporting import DailyReportBuilder  # noqa: E402
 from modules.repository import StockRepository  # noqa: E402
 from modules.screener import Screener  # noqa: E402
+from modules.screening_options import ScreeningOptions  # noqa: E402
 from scripts.render_chart_png import render  # noqa: E402
 
 
@@ -60,6 +62,17 @@ def main() -> int:
     scoring = load_yaml("config/scoring.yaml")
     notification = load_yaml("config/notification.yaml")
     profile = args.profile or screening["active_profile"]
+    if args.profile is None:
+        cloud_client = CloudPreferenceClient.from_environment()
+        if cloud_client is not None:
+            try:
+                options = ScreeningOptions(load_yaml("config/screening_options.yaml"), screening)
+                preference = cloud_client.fetch(options)
+                if preference is not None:
+                    screening, profile = apply_preference(preference, options, screening)
+                    print(f"Cloud screening preference: {preference.mode} / {profile}")
+            except (RuntimeError, ValueError) as error:
+                print(f"Warning: cloud screening preference ignored: {error}")
 
     database = Database(ROOT / settings["database"]["path"])
     database.initialize()
