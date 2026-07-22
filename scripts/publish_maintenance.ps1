@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/relax-screening-maintenance"
+    [string]$Branch = "agent/pair-line-deliveries"
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,8 +54,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Relax screening and update cloud maintenance" `
-    --body "Relaxes the production multi-timeframe RSI screen after a zero-result run, updates GitHub Actions to Node.js 24-compatible releases, and prevents generated runtime JSON from being committed.").Trim()
+    --title "Pair each stock comment with its chart" `
+    --body "Changes LINE delivery to send each candidate as an ordered text-and-chart pair, preserving the relationship between every stock comment and its corresponding chart.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

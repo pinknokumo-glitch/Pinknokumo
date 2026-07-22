@@ -12,7 +12,7 @@ from modules.database import Database
 from modules.daily_job import DailyUpdateJob
 from modules.fundamentals import FundamentalAnalyzer
 from modules.health import HealthChecker
-from modules.notifier import LineNotifier, format_screening_message
+from modules.notifier import LineNotifier, format_candidate_message, format_screening_message
 from modules.optimizer import HitCountOptimizer
 from modules.portfolio import PortfolioAnalyzer
 from modules.reporting import DailyReportBuilder
@@ -195,6 +195,19 @@ class RuleAndMetricTestCase(unittest.TestCase):
         invalid = LineNotifier({"notification": {"line": {"enabled": False, "chart_public_url_template": "http://example.com/{code}.png"}}})
         with self.assertRaises(ValueError):
             invalid.chart_urls(["72030"])
+
+    def test_candidate_message_pairs_one_comment_with_one_chart(self) -> None:
+        hit = {"code": "72030", "company_name": "テスト自動車", "expectation_score": 61.2,
+               "reason": "all conditions matched"}
+        message = format_candidate_message(
+            "oversold", hit, 2, 3, "この銘柄専用のコメント", "2026-07-22",
+        )
+        self.assertIn("候補 2/3", message)
+        self.assertIn("テスト自動車（72030）", message)
+        self.assertIn("この銘柄専用のコメント", message)
+        messages = LineNotifier.build_messages(message, ["https://example.com/charts/72030.png"])
+        self.assertEqual([item["type"] for item in messages], ["text", "image"])
+        self.assertIn("72030", messages[1]["originalContentUrl"])
 
     def test_daily_update_ticker_translation(self) -> None:
         self.assertEqual(DailyUpdateJob.ticker_for_code("72030", ".T"), "7203.T")

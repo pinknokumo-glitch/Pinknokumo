@@ -17,7 +17,7 @@ from modules.daily_job import DailyUpdateJob  # noqa: E402
 from modules.batch_backtest import BatchBacktester  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.github_publisher import GitHubPublisher  # noqa: E402
-from modules.notifier import LineNotifier, format_screening_message  # noqa: E402
+from modules.notifier import LineNotifier, format_candidate_message, format_screening_message  # noqa: E402
 from modules.reporting import DailyReportBuilder  # noqa: E402
 from modules.repository import StockRepository  # noqa: E402
 from modules.screener import Screener  # noqa: E402
@@ -103,8 +103,11 @@ def main() -> int:
         return 0
 
     line_config = notification["notification"]["line"]
+    max_candidates = int(line_config["max_candidates"])
     max_images = int(line_config.get("max_chart_images", 3))
-    codes = [str(hit["code"]) for hit in hits[:max_images]]
+    delivery_limit = min(max_candidates, max_images)
+    delivery_hits = hits[:delivery_limit]
+    codes = [str(hit["code"]) for hit in delivery_hits]
     chart_urls = []
     chart_warning = None
     if codes:
@@ -113,21 +116,45 @@ def main() -> int:
         except Exception as error:
             chart_warning = f"チャート更新失敗: {type(error).__name__}"
             print(f"Warning: {chart_warning}")
-    message = format_screening_message(
-        profile, hits, int(line_config["max_candidates"]), comments, screening_date,
-    )
     warnings = []
     if update and (update.get("failed") or update.get("financial_failed")):
         failed_count = len(update.get("failed", [])) + len(update.get("financial_failed", []))
         warnings.append(f"データ更新の一部に失敗しました（{failed_count}件）。")
     if chart_warning:
         warnings.append("チャートを更新できなかったため、今回はテキストのみ送信します。")
-    if warnings:
-        message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
-    result = LineNotifier(notification).send(message, chart_urls)
-    database.save_notification(result.provider, result.status, message, result.response_text)
-    print(f"Notification: {result.provider} / {result.status} / images={len(chart_urls)}")
-    return 0 if result.status == "sent" else 1
+    notifier = LineNotifier(notification)
+    if not delivery_hits:
+        message = format_screening_message(profile, hits, max_candidates, comments, screening_date)
+        if warnings:
+            message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
+        result = notifier.send(message)
+        database.save_notification(result.provider, result.status, message, result.response_text)
+        print(f"Notification: {result.provider} / {result.status} / candidates=0")
+        return 0 if result.status == "sent" else 1
+
+    results = []
+    for index, hit in enumerate(delivery_hits):
+        code = str(hit["code"])
+        message = format_candidate_message(
+            profile, hit, index + 1, len(delivery_hits), comments.get(code), screening_date,
+        )
+        if index == len(delivery_hits) - 1:
+            omitted = len(hits) - len(delivery_hits)
+            if omitted > 0:
+                message += f"\n\nほか{omitted}件（配信上限のため省略）"
+            if warnings:
+                message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
+        candidate_chart = chart_urls[index:index + 1]
+        result = notifier.send(message, candidate_chart)
+        database.save_notification(result.provider, result.status, message, result.response_text)
+        results.append(result)
+        print(
+            f"Notification candidate {index + 1}/{len(delivery_hits)}: "
+            f"{result.provider} / {result.status} / images={len(candidate_chart)}"
+        )
+        if result.status != "sent":
+            break
+    return 0 if len(results) == len(delivery_hits) and all(result.status == "sent" for result in results) else 1
 
 
 if __name__ == "__main__":

@@ -49,6 +49,33 @@ def format_screening_message(
     return "\n".join(lines)[:5000]
 
 
+def format_candidate_message(
+    profile: str, hit: Mapping[str, object], position: int, total: int,
+    comment: str | None = None, as_of_date: str | None = None,
+) -> str:
+    """Format one stock so its text can be immediately followed by its chart."""
+    code = str(hit["code"])
+    company_name = str(hit.get("company_name") or "").strip()
+    label = f"{company_name}（{code}）" if company_name else code
+    score = hit.get("expectation_score")
+    score_text = "未算出" if score is None else f"{float(score):.1f}/100"
+    lines = [
+        f"StockAI Navigator  候補 {position}/{total}",
+        f"プロファイル: {profile}",
+        f"銘柄: {label}",
+        f"期待値スコア: {score_text}",
+    ]
+    if as_of_date:
+        lines.append(f"判定基準日: {as_of_date}")
+    reason = str(hit.get("reason") or "").strip()
+    if reason:
+        lines.append(f"抽出理由: {reason}")
+    if comment:
+        lines.extend(["", comment])
+    lines.extend(["", "過去データの統計であり、将来の結果を保証するものではありません。"])
+    return "\n".join(lines)[:5000]
+
+
 class LineNotifier:
     endpoint = "https://api.line.me/v2/bot/message/push"
 
