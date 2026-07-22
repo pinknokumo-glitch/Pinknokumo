@@ -52,6 +52,24 @@ class ApiContractTestCase(unittest.TestCase):
         if response.status_code == 200:
             self.assertEqual(response.headers["content-type"], "image/svg+xml")
 
+    def test_screening_options_and_bounded_manual_preview(self) -> None:
+        options = self.client.get("/screening-options")
+        self.assertEqual(options.status_code, 200)
+        self.assertIn("割安株", [item["label"] for item in options.json()["genres"]])
+        self.assertEqual({mode["id"] for mode in options.json()["modes"]}, {"auto", "manual"})
+        preview = self.client.post("/screening-preview", json={
+            "logic": "all", "conditions": [
+                {"field": "daily.rsi_14", "operator": "<=", "value": 60},
+                {"field": "fundamental.per", "operator": "<=", "value": 15},
+            ],
+        })
+        self.assertEqual(preview.status_code, 200)
+        self.assertFalse(preview.json()["persisted"])
+        rejected = self.client.post("/screening-preview", json={
+            "conditions": [{"field": "daily.rsi_14", "operator": "<=", "value": 999}],
+        })
+        self.assertEqual(rejected.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,14 +84,37 @@ private fun RankingScreen(onSelect: (String) -> Unit, onOperations: () -> Unit, 
 
 @Composable
 private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
-    val profiles = listOf("momentum", "oversold", "rsi_rebound", "deep_value", "growth")
-    var profile by remember { mutableStateOf("momentum") }
+    var options by remember { mutableStateOf<ScreeningOptions?>(null) }
+    var mode by remember { mutableStateOf("auto") }
+    var genreId by remember { mutableStateOf<String?>(null) }
+    val manualValues = remember { mutableStateMapOf<String, String>() }
     var hits by remember { mutableStateOf<List<ScreeningHit>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableIntStateOf(0) }
-    LaunchedEffect(profile, refreshToken) {
+    LaunchedEffect(Unit) {
+        runCatching { withContext(Dispatchers.IO) { ApiClient().screeningOptions() } }
+            .onSuccess { loaded -> options = loaded; genreId = loaded.genres.firstOrNull()?.id }
+            .onFailure { error = it.message }
+    }
+    LaunchedEffect(mode, genreId, refreshToken, options) {
+        val loaded = options ?: return@LaunchedEffect
+        if (mode == "auto" && genreId == null) return@LaunchedEffect
         error = null
-        runCatching { withContext(Dispatchers.IO) { ApiClient().screening(profile) } }
+        runCatching {
+            withContext(Dispatchers.IO) {
+                if (mode == "auto") {
+                    val genre = loaded.genres.first { it.id == genreId }
+                    ApiClient().screening(genre.profile)
+                } else {
+                    val conditions = loaded.manualFields.mapNotNull { field ->
+                        manualValues[field.field]?.toDoubleOrNull()?.let { value ->
+                            ManualCondition(field.field, field.defaultOperator, value)
+                        }
+                    }
+                    if (conditions.isEmpty()) emptyList() else ApiClient().manualPreview(conditions)
+                }
+            }
+        }
             .onSuccess { hits = it }.onFailure { error = it.message }
     }
     Scaffold(topBar = {
@@ -103,16 +126,42 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
     }) { padding ->
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
             item {
+                Text("選び方", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    profiles.take(3).forEach { name ->
-                        FilterChip(selected = profile == name, onClick = { profile = name }, label = { Text(name) })
+                    FilterChip(selected = mode == "auto", onClick = { mode = "auto" }, label = { Text("オート") })
+                    FilterChip(selected = mode == "manual", onClick = { mode = "manual" }, label = { Text("マニュアル") })
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+            if (mode == "auto") {
+                options?.genres?.forEach { genre ->
+                    item {
+                        FilterChip(
+                            selected = genreId == genre.id,
+                            onClick = { genreId = genre.id },
+                            label = { Text(genre.label) },
+                        )
+                        Text(genre.description, style = MaterialTheme.typography.bodySmall)
+                        if (genre.evidenceStatus == "needs_validation") {
+                            Text("検証中", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    profiles.drop(3).forEach { name ->
-                        FilterChip(selected = profile == name, onClick = { profile = name }, label = { Text(name) })
+            } else {
+                item { Text("値を入力した項目だけをAND条件で使用します。", style = MaterialTheme.typography.bodySmall) }
+                options?.manualFields?.forEach { field ->
+                    item {
+                        OutlinedTextField(
+                            value = manualValues[field.field] ?: "",
+                            onValueChange = { manualValues[field.field] = it },
+                            label = { Text("${field.label} ${field.defaultOperator}") },
+                            supportingText = { Text("範囲 ${field.min}〜${field.max}") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
                     }
                 }
+                item { Button(onClick = { refreshToken++ }) { Text("条件をプレビュー") } }
             }
             error?.let { item { Text("APIへ接続できません: $it", color = MaterialTheme.colorScheme.error) } }
             if (hits.isEmpty() && error == null) item { Text("一致する銘柄はありません") }

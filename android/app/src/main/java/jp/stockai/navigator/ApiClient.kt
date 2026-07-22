@@ -29,6 +29,10 @@ data class Holding(
 data class PortfolioSummary(val totalMarketValue: Double, val positions: List<Holding>)
 data class WatchlistItem(val code: String, val note: String?, val companyName: String?)
 data class ScreeningHit(val code: String, val score: Double?, val reason: String)
+data class ScreeningGenre(val id: String, val label: String, val description: String, val profile: String, val evidenceStatus: String)
+data class ManualField(val field: String, val label: String, val min: Double, val max: Double, val defaultOperator: String)
+data class ScreeningOptions(val genres: List<ScreeningGenre>, val manualFields: List<ManualField>)
+data class ManualCondition(val field: String, val operator: String, val value: Double)
 data class StockOverview(
     val companyName: String?, val sector: String?, val close: Double?, val priceDate: String?,
     val per: Double?, val pbr: Double?, val roe: Double?, val dividendYield: Double?,
@@ -43,6 +47,20 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
             connection.requestMethod = "GET"
             connection.connectTimeout = 5_000
             connection.readTimeout = 10_000
+            if (connection.responseCode !in 200..299) error("API error: ${connection.responseCode}")
+            JSONObject(connection.inputStream.bufferedReader().readText())
+        } finally { connection.disconnect() }
+    }
+
+    private fun post(path: String, payload: JSONObject): JSONObject {
+        val connection = URL(baseUrl + path).openConnection() as HttpURLConnection
+        return try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 5_000
+            connection.readTimeout = 20_000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
             if (connection.responseCode !in 200..299) error("API error: ${connection.responseCode}")
             JSONObject(connection.inputStream.bufferedReader().readText())
         } finally { connection.disconnect() }
@@ -131,6 +149,39 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
             score = value.optDouble("expectation_score").takeUnless { it.isNaN() },
             reason = value.optString("reason"),
         )
+    }
+    fun screeningOptions(): ScreeningOptions {
+        val value = get("/screening-options")
+        val genres = value.getJSONArray("genres").mapItems { item ->
+            val genre = item as JSONObject
+            ScreeningGenre(
+                genre.getString("id"), genre.getString("label"), genre.getString("description"),
+                genre.getString("profile"), genre.optString("evidence_status", "baseline"),
+            )
+        }
+        val fields = value.getJSONArray("manual_fields").mapItems { item ->
+            val field = item as JSONObject
+            ManualField(
+                field.getString("field"), field.getString("label"), field.getDouble("min"), field.getDouble("max"),
+                field.getString("default_operator"),
+            )
+        }
+        return ScreeningOptions(genres, fields)
+    }
+    fun manualPreview(conditions: List<ManualCondition>): List<ScreeningHit> {
+        val items = JSONArray()
+        conditions.forEach { condition ->
+            items.put(JSONObject().put("field", condition.field).put("operator", condition.operator).put("value", condition.value))
+        }
+        val value = post("/screening-preview", JSONObject().put("logic", "all").put("conditions", items))
+        return value.getJSONArray("hits").mapItems { item ->
+            val hit = item as JSONObject
+            ScreeningHit(
+                code = hit.getString("code"),
+                score = hit.optDouble("expectation_score").takeUnless { it.isNaN() },
+                reason = hit.optString("reason"),
+            )
+        }
     }
     private fun <T> JSONArray.mapItems(transform: (Any) -> T): List<T> = (0 until length()).map { transform(get(it)) }
 }

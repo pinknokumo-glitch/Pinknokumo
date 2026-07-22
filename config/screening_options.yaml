@@ -1,0 +1,36 @@
+screening_options:
+  genres:
+    - id: value
+      label: 割安株
+      description: PER・PBR・財務健全性を重視します。
+      profile: value
+    - id: high_dividend
+      label: 高配当株
+      description: 実績配当利回り・自己資本比率・営業CFを重視します。
+      profile: high_dividend
+    - id: growth
+      label: 成長株
+      description: ROE・営業利益率・中期上昇トレンドを重視します。
+      profile: growth
+    - id: momentum
+      label: 上昇モメンタム
+      description: 移動平均とMACDによる上昇傾向を重視します。
+      profile: momentum
+    - id: rebound
+      label: 反発候補
+      description: RSIの改善を重視します。
+      profile: rsi_rebound
+    - id: adjustment
+      label: 調整局面
+      description: 日・週・月のRSIが低い銘柄を探します。現在は検証中です。
+      profile: oversold
+      evidence_status: needs_validation
+  manual_fields:
+    - {field: daily.rsi_14, label: 日足RSI, min: 0, max: 100, default_operator: "<="}
+    - {field: weekly.rsi_14, label: 週足RSI, min: 0, max: 100, default_operator: "<="}
+    - {field: monthly.rsi_14, label: 月足RSI, min: 0, max: 100, default_operator: "<="}
+    - {field: fundamental.per, label: PER, min: 0, max: 200, default_operator: "<="}
+    - {field: fundamental.pbr, label: PBR, min: 0, max: 20, default_operator: "<="}
+    - {field: fundamental.roe, label: ROE, min: -100, max: 200, default_operator: ">="}
+    - {field: fundamental.equity_ratio, label: 自己資本比率, min: 0, max: 100, default_operator: ">="}
+    - {field: fundamental.dividend_yield, label: 配当利回り, min: 0, max: 30, default_operator: ">="}
