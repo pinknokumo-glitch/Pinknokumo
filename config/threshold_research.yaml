@@ -1,0 +1,14 @@
+threshold_research:
+  holding_days: 60
+  minimum_trades: 30
+  target_current_hits:
+    min: 1
+    max: 5
+  candidates:
+    - {daily: 30, weekly: 35, monthly: 40}
+    - {daily: 35, weekly: 40, monthly: 45}
+    - {daily: 40, weekly: 45, monthly: 50}
+    - {daily: 45, weekly: 50, monthly: 50}
+    - {daily: 50, weekly: 50, monthly: 50}
+    - {daily: 55, weekly: 50, monthly: 50}
+    - {daily: 60, weekly: 50, monthly: 50}
