@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,8 @@ PATTERNS = {
     "LINE bearer token": re.compile(r"Bearer\s+[A-Za-z0-9._-]{40,}"),
     "private key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 }
+FORBIDDEN_TRACKED_PREFIXES = ("data/", "reports/", "work/")
+FORBIDDEN_TRACKED_NAMES = {".env"}
 
 
 def candidate_files() -> list[Path]:
@@ -26,8 +29,25 @@ def candidate_files() -> list[Path]:
     return files
 
 
+def tracked_runtime_files() -> list[str]:
+    """Return generated/private files accidentally committed to Git."""
+    if not (ROOT / ".git").exists():
+        return []
+    result = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        return []
+    tracked = result.stdout.decode("utf-8", errors="replace").split("\0")
+    return sorted(
+        path for path in tracked
+        if path in FORBIDDEN_TRACKED_NAMES or path.startswith(FORBIDDEN_TRACKED_PREFIXES)
+    )
+
+
 def main() -> int:
     findings = []
+    findings.extend(f"{path}: private/runtime file is tracked by Git" for path in tracked_runtime_files())
     for path in candidate_files():
         text = path.read_text(encoding="utf-8", errors="replace")
         for label, pattern in PATTERNS.items():
@@ -43,4 +63,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

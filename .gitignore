@@ -8,9 +8,9 @@ logs/*.log
 reports/*.json
 reports/charts/
 reports/logs/
+work/*.json
 android/.gradle/
 android/**/build/
 android/local.properties
 *.jks
 *.keystore
-

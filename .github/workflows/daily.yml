@@ -24,15 +24,15 @@ jobs:
       GITHUB_CHARTS_TOKEN: ${{ github.token }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Restore latest database
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: data/stockai.db
           key: stockai-db-${{ github.run_id }}
@@ -50,14 +50,14 @@ jobs:
 
       - name: Save updated database
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: data/stockai.db
           key: stockai-db-${{ github.run_id }}
 
       - name: Upload reports and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: stockai-reports-${{ github.run_id }}
           path: |
@@ -65,4 +65,3 @@ jobs:
             reports/logs/*.log
           if-no-files-found: ignore
           retention-days: 30
-
