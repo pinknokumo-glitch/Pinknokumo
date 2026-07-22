@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/pair-line-deliveries"
+    [string]$Branch = "agent/integrated-stock-commentary"
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,8 +54,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Pair each stock comment with its chart" `
-    --body "Changes LINE delivery to send each candidate as an ordered text-and-chart pair, preserving the relationship between every stock comment and its corresponding chart.").Trim()
+    --title "Add integrated technical and fundamental commentary" `
+    --body "Adds factual per-stock commentary covering technical indicators, latest disclosed fundamentals, backtest statistics, and an evidence-based overall assessment. Missing data is explicitly reported rather than inferred.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

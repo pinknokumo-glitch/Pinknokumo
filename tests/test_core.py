@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from modules.database import Database
+from modules.ai_comment import AnalysisCommentary
 from modules.daily_job import DailyUpdateJob
 from modules.fundamentals import FundamentalAnalyzer
 from modules.health import HealthChecker
@@ -168,6 +169,26 @@ class DatabaseTestCase(unittest.TestCase):
 
 
 class RuleAndMetricTestCase(unittest.TestCase):
+    def test_integrated_comment_includes_fundamentals_and_missing_data_state(self) -> None:
+        comment = AnalysisCommentary.integrated_comment({
+            "daily.rsi_14": 42.5, "weekly.rsi_14": 47.0, "monthly.rsi_14": 49.0,
+            "daily.close": 1200, "daily.sma_25": 1250, "daily.sma_75": 1100,
+            "daily.macd": -2, "daily.macd_signal": -1,
+            "fundamental.disclosed_date": "2026-06-30", "fundamental.per": 12,
+            "fundamental.pbr": 0.9, "fundamental.roe": 11, "fundamental.equity_ratio": 55,
+            "fundamental.operating_cash_flow": 100, "expectation_score": 65,
+        }, "過去シグナルは十分です。")
+        self.assertIn("【テクニカル】", comment)
+        self.assertIn("日足42.5", comment)
+        self.assertIn("【ファンダメンタル】", comment)
+        self.assertIn("開示日2026-06-30", comment)
+        self.assertIn("PER12.0倍", comment)
+        self.assertIn("【バックテスト】", comment)
+        self.assertIn("【総合所見】", comment)
+        missing = AnalysisCommentary.integrated_comment({}, None)
+        self.assertIn("ファンダメンタル評価は未実施", missing)
+        self.assertIn("バックテスト結果は未算出", missing)
+
     def test_notification_format_and_disabled_state(self) -> None:
         message = format_screening_message(
             "momentum", [{"code": "72030", "company_name": "テスト自動車", "expectation_score": 50.8,

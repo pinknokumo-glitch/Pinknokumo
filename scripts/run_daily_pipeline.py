@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from modules.daily_job import DailyUpdateJob  # noqa: E402
+from modules.ai_comment import AnalysisCommentary  # noqa: E402
 from modules.batch_backtest import BatchBacktester  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.github_publisher import GitHubPublisher  # noqa: E402
@@ -89,11 +90,12 @@ def main() -> int:
         hits = Screener(connection, indicators, screening).run(profile)
         screening_date = connection.execute("SELECT MAX(trade_date) FROM price_daily").fetchone()[0]
         repository = StockRepository(connection)
-        comments = {
-            str(hit["code"]): str(result["comment"])
-            for hit in hits
-            if (result := repository.latest_backtest_result(str(hit["code"]), profile)) and result.get("comment")
-        }
+        comments = {}
+        for hit in hits:
+            code = str(hit["code"])
+            result = repository.latest_backtest_result(code, profile)
+            backtest_comment = str(result["comment"]) if result and result.get("comment") else None
+            comments[code] = AnalysisCommentary.integrated_comment(hit, backtest_comment)
         report = DailyReportBuilder(connection).build()
     report_path = DailyReportBuilder.write(report, DailyReportBuilder.default_path(ROOT))
     print(f"Report written: {report_path}")
