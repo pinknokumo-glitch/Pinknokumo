@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import sqlite3
 import yaml
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Response
 
 from modules.database import Database
 from modules.repository import StockRepository
@@ -14,6 +14,7 @@ from modules.portfolio import PortfolioAnalyzer
 from modules.health import HealthChecker
 from modules.reporting import DailyReportBuilder
 from modules.chart import StockChartRenderer
+from modules.screening_options import ScreeningOptions
 
 ROOT = Path(__file__).resolve().parent
 app = FastAPI(title="StockAI Navigator API", version="0.1.0")
@@ -28,6 +29,10 @@ def repository() -> tuple[sqlite3.Connection, StockRepository]:
     connection = sqlite3.connect(db.path)
     connection.row_factory = sqlite3.Row
     return connection, StockRepository(connection)
+
+def load_config(name: str) -> dict:
+    with (ROOT / "config" / name).open(encoding="utf-8") as file:
+        return yaml.safe_load(file)
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -140,6 +145,26 @@ def portfolio() -> dict:
     db.initialize()
     with db.connect() as connection:
         return PortfolioAnalyzer(connection).positions()
+
+@app.get("/screening-options")
+def screening_options() -> dict:
+    return ScreeningOptions(load_config("screening_options.yaml"), load_config("screening.yaml")).catalog()
+
+@app.post("/screening-preview")
+def screening_preview(payload: dict = Body(...)) -> dict:
+    """Preview bounded manual conditions without persisting or changing cloud settings."""
+    options = ScreeningOptions(load_config("screening_options.yaml"), load_config("screening.yaml"))
+    try:
+        rule = options.manual_rule(payload.get("conditions") or [], str(payload.get("logic") or "all"))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    indicator_config = load_config("indicators.yaml")
+    manual_config = {"active_profile": "manual_preview", "profiles": {"manual_preview": rule}}
+    db = Database(ROOT / settings()["database"]["path"])
+    db.initialize()
+    with db.connect() as connection:
+        hits = Screener(connection, indicator_config, manual_config).run("manual_preview")
+    return {"mode": "manual", "persisted": False, "rule": rule, "hit_count": len(hits), "hits": hits}
 
 @app.get("/screening/{profile_name}")
 def screening(profile_name: str) -> dict:

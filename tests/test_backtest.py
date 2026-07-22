@@ -6,6 +6,7 @@ import unittest
 import pandas as pd
 
 from modules.backtest import Backtester
+from modules.threshold_research import oversold_rule, rank_threshold_results
 
 
 INDICATORS_DISABLED = {
@@ -51,6 +52,20 @@ class BacktestPointInTimeTestCase(unittest.TestCase):
 
         self.assertTrue(pd.isna(values.loc[1, "weekly__close"]))
         self.assertEqual(values.loc[2, "weekly__close"], 50.0)
+
+    def test_threshold_research_ranks_only_eligible_candidates_first(self) -> None:
+        rule = oversold_rule({"daily": 60, "weekly": 50, "monthly": 50})
+        self.assertEqual([condition["value"] for condition in rule["all"]], [60.0, 50.0, 50.0])
+        results = [
+            {"thresholds": {"daily": 60}, "current_hit_count": 1,
+             "summary": {"trade_count": 40}, "expectation": {"score": 65}},
+            {"thresholds": {"daily": 30}, "current_hit_count": 0,
+             "summary": {"trade_count": 100}, "expectation": {"score": 90}},
+        ]
+        ranked = rank_threshold_results(results, minimum_trades=30, target_min_hits=1, target_max_hits=5)
+        self.assertEqual(ranked[0]["thresholds"]["daily"], 60)
+        self.assertTrue(ranked[0]["eligible"])
+        self.assertFalse(ranked[1]["eligible"])
 
 
 if __name__ == "__main__":
