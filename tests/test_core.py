@@ -203,10 +203,12 @@ class RuleAndMetricTestCase(unittest.TestCase):
             "momentum", [{"code": "72030", "company_name": "テスト自動車", "expectation_score": 50.8,
                           "reason": "daily.close > daily.sma_25"}],
             comments_by_code={"72030": "統計コメント"}, as_of_date="2026-07-21",
+            evaluated_count=31,
         )
         self.assertIn("テスト自動車（72030）", message)
         self.assertIn("期待値スコア: 50.8/100", message)
         self.assertIn("判定基準日: 2026-07-21", message)
+        self.assertIn("判定対象: 31銘柄", message)
         self.assertIn("抽出理由:", message)
         self.assertIn("統計コメント", message)
         result = LineNotifier({"notification": {"line": {"enabled": False}}}).send(message)

@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/supabase-app-integration",
+    [string]$Branch = "agent/supabase-staged-relaxation",
     [switch]$RunWorkflow
 )
 
@@ -28,7 +28,11 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $sourceCommit = (& $git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the prepared commit." }
-$preparedCommits = @("6d1a64e1e848dddecbfb76cee69613a70c0dd0c2", $sourceCommit)
+$preparedCommits = @(
+    "6d1a64e1e848dddecbfb76cee69613a70c0dd0c2",
+    "e2c6cbc230fd69526f95496382618f0323598032",
+    $sourceCommit
+)
 
 $runtimeFiles = @(Get-ChildItem (Join-Path $root "work") -Filter "daily_report_*.json" -File -ErrorAction SilentlyContinue)
 $backupDir = Join-Path $root "data\publish-maintenance-backup"
@@ -58,8 +62,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Connect Android and daily runs to Supabase preferences" `
-    --body "Connects the Android screening settings screen to Supabase using user authentication and row-level security. Daily GitHub Actions runs now load the selected automatic genre or manual thresholds from Supabase, with safe fallback to repository defaults when cloud settings are unavailable. Credentials remain outside source control, and this publication does not start the LINE workflow.").Trim()
+    --title "Connect Supabase preferences and add staged RSI relaxation" `
+    --body "Connects Android and daily GitHub Actions runs to row-level-secured Supabase preferences. For the oversold profile, screening now starts with daily, weekly, and monthly RSI at 20, relaxes only daily RSI to 60 when there are no hits, and then relaxes weekly RSI to 50 only if the result is still empty; monthly RSI remains fixed at 20 throughout. Credentials remain outside source control, and this publication does not start the LINE workflow.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

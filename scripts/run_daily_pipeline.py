@@ -23,6 +23,7 @@ from modules.notifier import LineNotifier, format_candidate_message, format_scre
 from modules.reporting import DailyReportBuilder  # noqa: E402
 from modules.repository import StockRepository  # noqa: E402
 from modules.screener import Screener  # noqa: E402
+from modules.screening_relaxation import staged_rules  # noqa: E402
 from modules.screening_options import ScreeningOptions  # noqa: E402
 from scripts.render_chart_png import render  # noqa: E402
 
@@ -44,6 +45,15 @@ def publish_charts(codes: list[str], repository: str) -> list[str]:
     return urls
 
 
+def require_fresh_update_for_notification(notify: bool, skip_update: bool) -> None:
+    """Prevent sending a report from a deliberately stale local database."""
+    if notify and skip_update:
+        raise ValueError(
+            "LINE通知では当日のデータ更新が必須です。"
+            "--skip-updateを外して再実行してください。"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the StockAI daily pipeline")
     parser.add_argument("--notify", action="store_true", help="Publish charts and send the result to LINE")
@@ -53,6 +63,7 @@ def main() -> int:
     parser.add_argument("--profile", default=None)
     parser.add_argument("--repository", default="pinknokumo-glitch/Pinknokumo")
     args = parser.parse_args()
+    require_fresh_update_for_notification(args.notify, args.skip_update)
 
     settings = load_yaml("config/settings.yaml")
     indicators = load_yaml("config/indicators.yaml")
@@ -100,7 +111,24 @@ def main() -> int:
         }}, ensure_ascii=False, indent=2))
 
     with database.connect() as connection:
-        hits = Screener(connection, indicators, screening).run(profile)
+        screener = Screener(connection, indicators, screening)
+        base_rule = screening["profiles"].get(profile)
+        if base_rule is None:
+            raise ValueError(f"Unknown profile: {profile}")
+        relaxation_stages = staged_rules(
+            profile, base_rule, screening.get("auto_relaxation"),
+        )
+        hits = []
+        effective_profile = profile
+        relaxation_label = "基準条件"
+        for stage_profile, stage_label, stage_rule in relaxation_stages:
+            hits = screener.run(stage_profile, stage_rule)
+            effective_profile, relaxation_label = stage_profile, stage_label
+            print(f"Screening stage: {stage_label} / {len(hits)} matching stocks")
+            if hits:
+                break
+        evaluated_count = screener.candidate_count()
+        print(f"Screening universe: {evaluated_count} securities")
         screening_date = connection.execute("SELECT MAX(trade_date) FROM price_daily").fetchone()[0]
         repository = StockRepository(connection)
         comments = {}
@@ -112,7 +140,10 @@ def main() -> int:
         report = DailyReportBuilder(connection).build()
     report_path = DailyReportBuilder.write(report, DailyReportBuilder.default_path(ROOT))
     print(f"Report written: {report_path}")
-    print(f"Screening: {profile} / {len(hits)} matching stocks")
+    print(
+        f"Screening: {effective_profile} / {len(hits)} matching stocks "
+        f"/ stage={relaxation_label}"
+    )
 
     if not args.notify:
         return 0
@@ -139,7 +170,10 @@ def main() -> int:
         warnings.append("チャートを更新できなかったため、今回はテキストのみ送信します。")
     notifier = LineNotifier(notification)
     if not delivery_hits:
-        message = format_screening_message(profile, hits, max_candidates, comments, screening_date)
+        message = format_screening_message(
+            effective_profile, hits, max_candidates, comments, screening_date,
+            evaluated_count,
+        )
         if warnings:
             message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
         if database.was_notification_sent("line", message):
@@ -154,7 +188,8 @@ def main() -> int:
     for index, hit in enumerate(delivery_hits):
         code = str(hit["code"])
         message = format_candidate_message(
-            profile, hit, index + 1, len(delivery_hits), comments.get(code), screening_date,
+            effective_profile, hit, index + 1, len(delivery_hits), comments.get(code),
+            screening_date, evaluated_count,
         )
         if index == len(delivery_hits) - 1:
             omitted = len(hits) - len(delivery_hits)

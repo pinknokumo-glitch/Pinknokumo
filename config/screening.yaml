@@ -1,5 +1,18 @@
 active_profile: oversold
 
+auto_relaxation:
+  enabled_profiles: [oversold]
+  stages:
+    - id: daily
+      label: 日足のみ緩和
+      thresholds:
+        daily.rsi_14: 60
+    - id: daily_weekly
+      label: 日足・週足を緩和
+      thresholds:
+        daily.rsi_14: 60
+        weekly.rsi_14: 50
+
 profiles:
   notification_demo:
     description: 通知確認専用の緩和条件。本番判断には使用しない。
@@ -15,17 +28,17 @@ profiles:
         value: 50
 
   oversold:
-    description: 日・週・月のRSIが調整水準にある銘柄（通知候補を確保する緩和設定）
+    description: 日・週・月のRSIが売られ過ぎ水準にある銘柄
     all:
       - field: daily.rsi_14
         operator: "<="
-        value: 60
+        value: 20
       - field: weekly.rsi_14
         operator: "<="
-        value: 50
+        value: 20
       - field: monthly.rsi_14
         operator: "<="
-        value: 50
+        value: 20
 
   momentum:
     description: 25日移動平均を上回り、MACDがシグナルを上抜けた銘柄

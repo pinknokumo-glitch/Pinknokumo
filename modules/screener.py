@@ -18,9 +18,11 @@ class Screener:
         self.screening_config, self.rules = screening_config, RuleEngine()
         self.fundamentals = FundamentalAnalyzer()
 
-    def run(self, profile_name: str | None = None) -> list[dict[str, object]]:
+    def run(
+        self, profile_name: str | None = None, rule: Mapping[str, object] | None = None
+    ) -> list[dict[str, object]]:
         profile_name = profile_name or self.screening_config["active_profile"]
-        profile = self.screening_config["profiles"].get(profile_name)
+        profile = rule or self.screening_config["profiles"].get(profile_name)
         if profile is None:
             raise ValueError(f"Unknown profile: {profile_name}")
         codes = self._candidate_codes()
@@ -42,6 +44,9 @@ class Screener:
     def snapshots(self) -> list[dict[str, object]]:
         codes = self._candidate_codes()
         return [{"code": code, **self._values_for_code(code)} for code in codes]
+
+    def candidate_count(self) -> int:
+        return len(self._candidate_codes())
 
     def _candidate_codes(self) -> list[str]:
         return [row[0] for row in self.conn.execute(
