@@ -13,10 +13,17 @@ from modules.fundamentals import FundamentalAnalyzer
 TABLES = {"daily": "price_daily", "weekly": "price_weekly", "monthly": "price_monthly"}
 
 class Screener:
-    def __init__(self, conn: sqlite3.Connection, indicator_config: Mapping[str, object], screening_config: Mapping[str, object]) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        indicator_config: Mapping[str, object],
+        screening_config: Mapping[str, object],
+        candidate_codes: list[str] | None = None,
+    ) -> None:
         self.conn, self.analyzer = conn, TechnicalAnalyzer(indicator_config)
         self.screening_config, self.rules = screening_config, RuleEngine()
         self.fundamentals = FundamentalAnalyzer()
+        self.restricted_codes = candidate_codes
 
     def run(
         self, profile_name: str | None = None, rule: Mapping[str, object] | None = None
@@ -49,6 +56,8 @@ class Screener:
         return len(self._candidate_codes())
 
     def _candidate_codes(self) -> list[str]:
+        if self.restricted_codes is not None:
+            return list(dict.fromkeys(self.restricted_codes))
         return [row[0] for row in self.conn.execute(
             """SELECT DISTINCT code FROM price_daily
                WHERE code NOT IN (SELECT DISTINCT market_code FROM market_regime)

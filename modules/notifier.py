@@ -23,10 +23,13 @@ def format_screening_message(
     profile: str, hits: Sequence[Mapping[str, object]], max_candidates: int = 10,
     comments_by_code: Mapping[str, str] | None = None, as_of_date: str | None = None,
     evaluated_count: int | None = None,
+    prefiltered_count: int | None = None,
 ) -> str:
     header = f"StockAI Navigator\nプロファイル: {profile}\nヒット件数: {len(hits)}件"
     if evaluated_count is not None:
         header += f"\n判定対象: {evaluated_count}銘柄"
+    if prefiltered_count is not None:
+        header += f"\n朝更新候補: {prefiltered_count}銘柄"
     if as_of_date:
         header += f"\n判定基準日: {as_of_date}"
     if not hits:
@@ -56,6 +59,7 @@ def format_candidate_message(
     profile: str, hit: Mapping[str, object], position: int, total: int,
     comment: str | None = None, as_of_date: str | None = None,
     evaluated_count: int | None = None,
+    prefiltered_count: int | None = None,
 ) -> str:
     """Format one stock so its text can be immediately followed by its chart."""
     code = str(hit["code"])
@@ -73,6 +77,8 @@ def format_candidate_message(
         lines.append(f"判定基準日: {as_of_date}")
     if evaluated_count is not None:
         lines.append(f"判定対象: {evaluated_count}銘柄")
+    if prefiltered_count is not None:
+        lines.append(f"朝更新候補: {prefiltered_count}銘柄")
     reason = str(hit.get("reason") or "").strip()
     if reason:
         lines.append(f"抽出理由: {reason}")

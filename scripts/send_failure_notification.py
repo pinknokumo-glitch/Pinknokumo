@@ -19,11 +19,12 @@ def main() -> int:
         config = yaml.safe_load(file)
     repository = os.getenv("GITHUB_REPOSITORY", "pinknokumo-glitch/Pinknokumo")
     run_id = os.getenv("GITHUB_RUN_ID", "")
+    job_label = os.getenv("STOCKAI_JOB_LABEL", "日次処理")
     run_url = f"https://github.com/{repository}/actions/runs/{run_id}" if run_id else "GitHub Actionsを確認してください。"
     timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
     message = (
         "StockAI Navigator 障害通知\n"
-        f"日次処理が正常に完了しませんでした。\n発生時刻: {timestamp}\n確認: {run_url}\n"
+        f"{job_label}が正常に完了しませんでした。\n発生時刻: {timestamp}\n確認: {run_url}\n"
         "秘密情報や認証情報は通知に含まれていません。"
     )
     result = LineNotifier(config).send(message)

@@ -12,6 +12,9 @@ providers:
     retries: 3
     retry_delay_seconds: 2
     daily_update_overlap_days: 7
+    bulk_chunk_size: 100
+    bulk_initial_period: "2y"
+    bulk_incremental_period: "10d"
   jquants:
     enabled: true
     api_key_env: JQUANTS_API_KEY
@@ -29,3 +32,11 @@ application:
   timezone: Asia/Tokyo
   log_level: INFO
   default_result_limit: 100
+
+screening_universe:
+  markets: [プライム, スタンダード, グロース]
+  prefilter:
+    weekly_rsi_max: 50
+    monthly_rsi_max: 25
+  maximum_pool_age_days: 4
+  minimum_coverage_ratio: 0.95

@@ -19,6 +19,7 @@ from modules.batch_backtest import BatchBacktester  # noqa: E402
 from modules.cloud_preferences import CloudPreferenceClient, apply_preference  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.github_publisher import GitHubPublisher  # noqa: E402
+from modules.morning_candidates import MorningCandidateJob  # noqa: E402
 from modules.notifier import LineNotifier, format_candidate_message, format_screening_message  # noqa: E402
 from modules.reporting import DailyReportBuilder  # noqa: E402
 from modules.repository import StockRepository  # noqa: E402
@@ -54,6 +55,16 @@ def require_fresh_update_for_notification(notify: bool, skip_update: bool) -> No
         )
 
 
+def require_complete_candidate_update(
+    candidate_pool: bool, update: dict[str, object]
+) -> None:
+    if candidate_pool and update.get("failed"):
+        raise RuntimeError(
+            "朝の候補銘柄に最新価格を取得できない銘柄があるため、"
+            "通常配信を停止しました。"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the StockAI daily pipeline")
     parser.add_argument("--notify", action="store_true", help="Publish charts and send the result to LINE")
@@ -62,6 +73,10 @@ def main() -> int:
     parser.add_argument("--holding-days", type=int, default=60)
     parser.add_argument("--profile", default=None)
     parser.add_argument("--repository", default="pinknokumo-glitch/Pinknokumo")
+    parser.add_argument(
+        "--candidate-pool", action="store_true",
+        help="Use the latest successful evening full-market candidate pool",
+    )
     args = parser.parse_args()
     require_fresh_update_for_notification(args.notify, args.skip_update)
 
@@ -88,9 +103,19 @@ def main() -> int:
     database = Database(ROOT / settings["database"]["path"])
     database.initialize()
     update = None
+    candidate_codes = None
+    pool_metadata = None
+    if args.candidate_pool:
+        morning_job = MorningCandidateJob(database, settings)
+        pool_metadata, candidate_codes = morning_job.load_valid_pool()
     if not args.skip_update:
-        update = DailyUpdateJob(database, settings, regime).run()
+        update = (
+            morning_job.run(candidate_codes)
+            if args.candidate_pool
+            else DailyUpdateJob(database, settings, regime).run()
+        )
         print(json.dumps({"daily_update": update}, ensure_ascii=False, indent=2))
+        require_complete_candidate_update(args.candidate_pool, update)
 
     if not args.skip_backtest:
         rule = screening["profiles"].get(profile)
@@ -111,7 +136,9 @@ def main() -> int:
         }}, ensure_ascii=False, indent=2))
 
     with database.connect() as connection:
-        screener = Screener(connection, indicators, screening)
+        screener = Screener(
+            connection, indicators, screening, candidate_codes=candidate_codes,
+        )
         base_rule = screening["profiles"].get(profile)
         if base_rule is None:
             raise ValueError(f"Unknown profile: {profile}")
@@ -127,8 +154,16 @@ def main() -> int:
             print(f"Screening stage: {stage_label} / {len(hits)} matching stocks")
             if hits:
                 break
-        evaluated_count = screener.candidate_count()
-        print(f"Screening universe: {evaluated_count} securities")
+        prefiltered_count = screener.candidate_count()
+        evaluated_count = (
+            int(pool_metadata["universe_count"])
+            if pool_metadata is not None
+            else prefiltered_count
+        )
+        print(
+            f"Screening universe: {evaluated_count} securities / "
+            f"morning candidates: {prefiltered_count}"
+        )
         screening_date = connection.execute("SELECT MAX(trade_date) FROM price_daily").fetchone()[0]
         repository = StockRepository(connection)
         comments = {}
@@ -172,7 +207,7 @@ def main() -> int:
     if not delivery_hits:
         message = format_screening_message(
             effective_profile, hits, max_candidates, comments, screening_date,
-            evaluated_count,
+            evaluated_count, prefiltered_count if args.candidate_pool else None,
         )
         if warnings:
             message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
@@ -190,6 +225,7 @@ def main() -> int:
         message = format_candidate_message(
             effective_profile, hit, index + 1, len(delivery_hits), comments.get(code),
             screening_date, evaluated_count,
+            prefiltered_count if args.candidate_pool else None,
         )
         if index == len(delivery_hits) - 1:
             omitted = len(hits) - len(delivery_hits)

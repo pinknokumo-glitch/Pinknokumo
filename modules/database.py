@@ -82,6 +82,29 @@ CREATE TABLE IF NOT EXISTS watchlist (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS screening_universe (
+    code TEXT PRIMARY KEY,
+    market_name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS screening_candidate_pool (
+    pool_date TEXT NOT NULL,
+    code TEXT NOT NULL,
+    weekly_rsi REAL,
+    monthly_rsi REAL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (pool_date, code)
+);
+CREATE TABLE IF NOT EXISTS screening_pool_run (
+    pool_date TEXT PRIMARY KEY,
+    universe_count INTEGER NOT NULL,
+    evaluated_count INTEGER NOT NULL,
+    candidate_count INTEGER NOT NULL,
+    failed_count INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS portfolio_position (
     code TEXT PRIMARY KEY,
     quantity REAL NOT NULL CHECK(quantity > 0),
@@ -100,6 +123,7 @@ CREATE TABLE IF NOT EXISTS job_run (
 CREATE INDEX IF NOT EXISTS idx_daily_date ON price_daily(trade_date);
 CREATE INDEX IF NOT EXISTS idx_financial_code ON financial(code);
 CREATE INDEX IF NOT EXISTS idx_market_regime_date ON market_regime(trade_date);
+CREATE INDEX IF NOT EXISTS idx_candidate_pool_date ON screening_candidate_pool(pool_date);
 """
 
 class Database:
@@ -203,6 +227,92 @@ class Database:
                 [note, *categories],
             )
         return cursor.rowcount
+
+    def sync_screening_universe(self, market_names: Iterable[str]) -> int:
+        """Replace the automatic-screening universe with currently listed target markets."""
+        markets = [str(value).strip() for value in market_names if str(value).strip()]
+        if not markets:
+            raise ValueError("At least one market name is required")
+        placeholders = ", ".join("?" for _ in markets)
+        with self.connect() as conn:
+            conn.execute("UPDATE screening_universe SET enabled=0, updated_at=CURRENT_TIMESTAMP")
+            conn.execute(
+                f"""INSERT INTO screening_universe (code, market_name, enabled)
+                    SELECT code, market_name, 1 FROM master_stock
+                    WHERE market_name IN ({placeholders})
+                      AND (delisted_date IS NULL OR delisted_date='')
+                    ON CONFLICT(code) DO UPDATE SET
+                      market_name=excluded.market_name,
+                      enabled=1,
+                      updated_at=CURRENT_TIMESTAMP""",
+                markets,
+            )
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM screening_universe WHERE enabled=1"
+            ).fetchone()[0])
+
+    def screening_universe_codes(self) -> list[str]:
+        with self.connect() as conn:
+            return [str(row[0]) for row in conn.execute(
+                "SELECT code FROM screening_universe WHERE enabled=1 ORDER BY code"
+            )]
+
+    def replace_candidate_pool(
+        self,
+        pool_date: str,
+        candidates: Iterable[Mapping[str, object]],
+        universe_count: int,
+        evaluated_count: int,
+        failed_count: int,
+        minimum_coverage_ratio: float = 0.95,
+    ) -> int:
+        rows = [
+            {
+                "pool_date": pool_date,
+                "code": str(item["code"]),
+                "weekly_rsi": item.get("weekly_rsi"),
+                "monthly_rsi": item.get("monthly_rsi"),
+            }
+            for item in candidates
+        ]
+        with self.connect() as conn:
+            conn.execute("DELETE FROM screening_candidate_pool WHERE pool_date=?", [pool_date])
+        if rows:
+            self.upsert_rows(
+                "screening_candidate_pool", rows, ["pool_date", "code"]
+            )
+        coverage = evaluated_count / universe_count if universe_count else 0.0
+        status = (
+            "success"
+            if failed_count == 0 and coverage >= minimum_coverage_ratio
+            else "partial_failure"
+        )
+        self.upsert_rows("screening_pool_run", [{
+            "pool_date": pool_date,
+            "universe_count": universe_count,
+            "evaluated_count": evaluated_count,
+            "candidate_count": len(rows),
+            "failed_count": failed_count,
+            "status": status,
+        }], ["pool_date"])
+        return len(rows)
+
+    def latest_candidate_pool(self) -> tuple[dict[str, object] | None, list[str]]:
+        with self.connect() as conn:
+            row = conn.execute(
+                """SELECT pool_date, universe_count, evaluated_count, candidate_count,
+                          failed_count, status
+                   FROM screening_pool_run ORDER BY pool_date DESC LIMIT 1"""
+            ).fetchone()
+            if row is None:
+                return None, []
+            metadata = dict(row)
+            pool_date = str(metadata["pool_date"])
+            codes = [str(item[0]) for item in conn.execute(
+                "SELECT code FROM screening_candidate_pool WHERE pool_date=? ORDER BY code",
+                [pool_date],
+            )]
+        return metadata, codes
 
     def save_portfolio_position(self, code: str, quantity: float, average_cost: float, note: str | None = None) -> None:
         if quantity <= 0 or average_cost < 0:
