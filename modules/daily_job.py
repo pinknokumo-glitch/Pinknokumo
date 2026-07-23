@@ -101,10 +101,14 @@ class DailyUpdateJob:
 
     @staticmethod
     def ticker_for_code(code: str, suffix: str) -> str:
-        """Translate only Japanese numeric security codes; preserve index/foreign symbols."""
-        if code.endswith(suffix) or not code.isdigit() or len(code) not in {4, 5}:
+        """Translate J-Quants' five-character codes and numeric TSE codes."""
+        if code.endswith(suffix):
             return code
-        return f"{code[:4]}{suffix}"
+        if len(code) == 5 and code.endswith("0") and code[:4].isalnum():
+            return f"{code[:4]}{suffix}"
+        if len(code) == 4 and code.isdigit():
+            return f"{code}{suffix}"
+        return code
 
     @staticmethod
     def incremental_start(latest_price_date: str | None, overlap_days: int) -> str | None:
