@@ -70,6 +70,24 @@ class DatabaseTestCase(unittest.TestCase):
             rows = connection.execute("SELECT code, note FROM watchlist ORDER BY code").fetchall()
         self.assertEqual([("11110", "existing")], [(row["code"], row["note"]) for row in rows])
 
+    def test_market_universe_and_empty_candidate_pool_are_persisted(self) -> None:
+        self.db.upsert_rows("master_stock", [
+            {"code": "11110", "market_name": "プライム", "delisted_date": None},
+            {"code": "22220", "market_name": "スタンダード", "delisted_date": None},
+            {"code": "33330", "market_name": "その他", "delisted_date": None},
+        ], ["code"])
+        count = self.db.sync_screening_universe(["プライム", "スタンダード", "グロース"])
+        self.assertEqual(count, 2)
+        self.assertEqual(self.db.screening_universe_codes(), ["11110", "22220"])
+        saved = self.db.replace_candidate_pool(
+            "2026-07-23", [], universe_count=2, evaluated_count=2, failed_count=0,
+        )
+        self.assertEqual(saved, 0)
+        metadata, codes = self.db.latest_candidate_pool()
+        self.assertEqual(metadata["candidate_count"], 0)
+        self.assertEqual(metadata["status"], "success")
+        self.assertEqual(codes, [])
+
     def test_daily_report_contains_local_summary(self) -> None:
         self.db.add_to_watchlist("72030", "report target")
         self.db.save_job_run("daily_update", "success", {"updated": ["72030"]})
@@ -203,10 +221,12 @@ class RuleAndMetricTestCase(unittest.TestCase):
             "momentum", [{"code": "72030", "company_name": "テスト自動車", "expectation_score": 50.8,
                           "reason": "daily.close > daily.sma_25"}],
             comments_by_code={"72030": "統計コメント"}, as_of_date="2026-07-21",
+            evaluated_count=31,
         )
         self.assertIn("テスト自動車（72030）", message)
         self.assertIn("期待値スコア: 50.8/100", message)
         self.assertIn("判定基準日: 2026-07-21", message)
+        self.assertIn("判定対象: 31銘柄", message)
         self.assertIn("抽出理由:", message)
         self.assertIn("統計コメント", message)
         result = LineNotifier({"notification": {"line": {"enabled": False}}}).send(message)

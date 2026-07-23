@@ -322,4 +322,11 @@ powershell -ExecutionPolicy Bypass -File scripts\install_daily_task.ps1 -Time "1
 
 ### PC不要のGitHub Actions実行（準備済み）
 
-`.github/workflows/daily.yml` は平日10:00（日本時間）にクラウドで日次処理を実行します。公開前にGitHubリポジトリへソース一式を反映し、Repository secretsへ `JQUANTS_API_KEY`、`LINE_CHANNEL_ACCESS_TOKEN`、`LINE_RECIPIENT_ID` を登録する必要があります。秘密値はファイルへ保存しません。
+クラウド運用は二段階です。
+
+- `.github/workflows/evening.yml`: 平日17:17（日本時間）にプライム・スタンダード・グロースの全銘柄を100銘柄単位で差分更新し、週足RSI50以下・月足RSI25以下の翌朝候補プールを保存します。
+- `.github/workflows/daily.yml`: 平日10:07（日本時間）に候補プールだけを最新価格へ更新し、設定済みの厳密な段階条件で判定してLINE配信します。
+
+月足25以下は取得対象を広めに確保する予備抽出であり、最終配信の月足条件20以下は変更しません。候補プールが古い場合、前夜の価格取得に失敗が残った場合、または全市場の95%未満しか評価できなかった場合は通常配信を停止します。
+
+公開前にGitHubリポジトリへソース一式を反映し、Repository secretsへ `JQUANTS_API_KEY`、`LINE_CHANNEL_ACCESS_TOKEN`、`LINE_RECIPIENT_ID` を登録する必要があります。秘密値はファイルへ保存しません。

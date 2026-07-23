@@ -13,14 +13,23 @@ from modules.fundamentals import FundamentalAnalyzer
 TABLES = {"daily": "price_daily", "weekly": "price_weekly", "monthly": "price_monthly"}
 
 class Screener:
-    def __init__(self, conn: sqlite3.Connection, indicator_config: Mapping[str, object], screening_config: Mapping[str, object]) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        indicator_config: Mapping[str, object],
+        screening_config: Mapping[str, object],
+        candidate_codes: list[str] | None = None,
+    ) -> None:
         self.conn, self.analyzer = conn, TechnicalAnalyzer(indicator_config)
         self.screening_config, self.rules = screening_config, RuleEngine()
         self.fundamentals = FundamentalAnalyzer()
+        self.restricted_codes = candidate_codes
 
-    def run(self, profile_name: str | None = None) -> list[dict[str, object]]:
+    def run(
+        self, profile_name: str | None = None, rule: Mapping[str, object] | None = None
+    ) -> list[dict[str, object]]:
         profile_name = profile_name or self.screening_config["active_profile"]
-        profile = self.screening_config["profiles"].get(profile_name)
+        profile = rule or self.screening_config["profiles"].get(profile_name)
         if profile is None:
             raise ValueError(f"Unknown profile: {profile_name}")
         codes = self._candidate_codes()
@@ -43,7 +52,12 @@ class Screener:
         codes = self._candidate_codes()
         return [{"code": code, **self._values_for_code(code)} for code in codes]
 
+    def candidate_count(self) -> int:
+        return len(self._candidate_codes())
+
     def _candidate_codes(self) -> list[str]:
+        if self.restricted_codes is not None:
+            return list(dict.fromkeys(self.restricted_codes))
         return [row[0] for row in self.conn.execute(
             """SELECT DISTINCT code FROM price_daily
                WHERE code NOT IN (SELECT DISTINCT market_code FROM market_regime)

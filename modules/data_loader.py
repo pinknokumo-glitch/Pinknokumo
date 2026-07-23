@@ -50,6 +50,65 @@ class DataLoader:
             raise RuntimeError(f"No price data returned for {ticker}")
         if frame.empty:
             raise RuntimeError(f"No price data returned for {ticker}")
+        return self._save_yfinance_frame(code, frame)
+
+    def load_yfinance_batch(
+        self,
+        ticker_codes: list[tuple[str, str]],
+        period: str,
+    ) -> dict[str, object]:
+        """Download a bounded ticker batch and persist every returned security."""
+        if not ticker_codes:
+            return {"updated": [], "failed": []}
+        cfg = self.settings["providers"]["yfinance"]
+        tickers = [ticker for ticker, _ in ticker_codes]
+        try:
+            frame = yf.download(
+                tickers=tickers,
+                period=period,
+                interval=cfg["interval"],
+                auto_adjust=cfg["auto_adjust"],
+                repair=cfg["repair"],
+                actions=True,
+                group_by="ticker",
+                threads=True,
+                progress=False,
+            )
+        except Exception as error:
+            return {
+                "updated": [],
+                "failed": [{"code": code, "ticker": ticker, "error": str(error)}
+                           for ticker, code in ticker_codes],
+            }
+        updated, failed = [], []
+        for ticker, code in ticker_codes:
+            try:
+                ticker_frame = self._ticker_frame(frame, ticker, len(ticker_codes))
+                count = self._save_yfinance_frame(code, ticker_frame)
+                updated.append({"code": code, "ticker": ticker, "daily_rows": count})
+            except Exception as error:
+                failed.append({"code": code, "ticker": ticker, "error": str(error)})
+        return {"updated": updated, "failed": failed}
+
+    @staticmethod
+    def _ticker_frame(frame: pd.DataFrame, ticker: str, ticker_count: int) -> pd.DataFrame:
+        if frame.empty:
+            raise RuntimeError("No batch price data returned")
+        if isinstance(frame.columns, pd.MultiIndex):
+            level0 = frame.columns.get_level_values(0)
+            level1 = frame.columns.get_level_values(1)
+            if ticker in level0:
+                return frame[ticker].dropna(how="all")
+            if ticker in level1:
+                return frame.xs(ticker, axis=1, level=1).dropna(how="all")
+        if ticker_count == 1:
+            return frame.dropna(how="all")
+        raise RuntimeError(f"No price data returned for {ticker}")
+
+    def _save_yfinance_frame(self, code: str, frame: pd.DataFrame) -> int:
+        if frame is None or frame.empty:
+            raise RuntimeError(f"No price data returned for {code}")
+        frame = frame.copy()
         frame.index = pd.to_datetime(frame.index).tz_localize(None)
         frame.index.name = "trade_date"
         frame = frame.reset_index()

@@ -16,12 +16,16 @@ sys.path.insert(0, str(ROOT))
 from modules.daily_job import DailyUpdateJob  # noqa: E402
 from modules.ai_comment import AnalysisCommentary  # noqa: E402
 from modules.batch_backtest import BatchBacktester  # noqa: E402
+from modules.cloud_preferences import CloudPreferenceClient, apply_preference  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.github_publisher import GitHubPublisher  # noqa: E402
+from modules.morning_candidates import MorningCandidateJob  # noqa: E402
 from modules.notifier import LineNotifier, format_candidate_message, format_screening_message  # noqa: E402
 from modules.reporting import DailyReportBuilder  # noqa: E402
 from modules.repository import StockRepository  # noqa: E402
 from modules.screener import Screener  # noqa: E402
+from modules.screening_relaxation import staged_rules  # noqa: E402
+from modules.screening_options import ScreeningOptions  # noqa: E402
 from scripts.render_chart_png import render  # noqa: E402
 
 
@@ -42,6 +46,25 @@ def publish_charts(codes: list[str], repository: str) -> list[str]:
     return urls
 
 
+def require_fresh_update_for_notification(notify: bool, skip_update: bool) -> None:
+    """Prevent sending a report from a deliberately stale local database."""
+    if notify and skip_update:
+        raise ValueError(
+            "LINE通知では当日のデータ更新が必須です。"
+            "--skip-updateを外して再実行してください。"
+        )
+
+
+def require_complete_candidate_update(
+    candidate_pool: bool, update: dict[str, object]
+) -> None:
+    if candidate_pool and update.get("failed"):
+        raise RuntimeError(
+            "朝の候補銘柄に最新価格を取得できない銘柄があるため、"
+            "通常配信を停止しました。"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the StockAI daily pipeline")
     parser.add_argument("--notify", action="store_true", help="Publish charts and send the result to LINE")
@@ -50,7 +73,12 @@ def main() -> int:
     parser.add_argument("--holding-days", type=int, default=60)
     parser.add_argument("--profile", default=None)
     parser.add_argument("--repository", default="pinknokumo-glitch/Pinknokumo")
+    parser.add_argument(
+        "--candidate-pool", action="store_true",
+        help="Use the latest successful evening full-market candidate pool",
+    )
     args = parser.parse_args()
+    require_fresh_update_for_notification(args.notify, args.skip_update)
 
     settings = load_yaml("config/settings.yaml")
     indicators = load_yaml("config/indicators.yaml")
@@ -60,13 +88,34 @@ def main() -> int:
     scoring = load_yaml("config/scoring.yaml")
     notification = load_yaml("config/notification.yaml")
     profile = args.profile or screening["active_profile"]
+    if args.profile is None:
+        cloud_client = CloudPreferenceClient.from_environment()
+        if cloud_client is not None:
+            try:
+                options = ScreeningOptions(load_yaml("config/screening_options.yaml"), screening)
+                preference = cloud_client.fetch(options)
+                if preference is not None:
+                    screening, profile = apply_preference(preference, options, screening)
+                    print(f"Cloud screening preference: {preference.mode} / {profile}")
+            except (RuntimeError, ValueError) as error:
+                print(f"Warning: cloud screening preference ignored: {error}")
 
     database = Database(ROOT / settings["database"]["path"])
     database.initialize()
     update = None
+    candidate_codes = None
+    pool_metadata = None
+    if args.candidate_pool:
+        morning_job = MorningCandidateJob(database, settings)
+        pool_metadata, candidate_codes = morning_job.load_valid_pool()
     if not args.skip_update:
-        update = DailyUpdateJob(database, settings, regime).run()
+        update = (
+            morning_job.run(candidate_codes)
+            if args.candidate_pool
+            else DailyUpdateJob(database, settings, regime).run()
+        )
         print(json.dumps({"daily_update": update}, ensure_ascii=False, indent=2))
+        require_complete_candidate_update(args.candidate_pool, update)
 
     if not args.skip_backtest:
         rule = screening["profiles"].get(profile)
@@ -87,7 +136,34 @@ def main() -> int:
         }}, ensure_ascii=False, indent=2))
 
     with database.connect() as connection:
-        hits = Screener(connection, indicators, screening).run(profile)
+        screener = Screener(
+            connection, indicators, screening, candidate_codes=candidate_codes,
+        )
+        base_rule = screening["profiles"].get(profile)
+        if base_rule is None:
+            raise ValueError(f"Unknown profile: {profile}")
+        relaxation_stages = staged_rules(
+            profile, base_rule, screening.get("auto_relaxation"),
+        )
+        hits = []
+        effective_profile = profile
+        relaxation_label = "基準条件"
+        for stage_profile, stage_label, stage_rule in relaxation_stages:
+            hits = screener.run(stage_profile, stage_rule)
+            effective_profile, relaxation_label = stage_profile, stage_label
+            print(f"Screening stage: {stage_label} / {len(hits)} matching stocks")
+            if hits:
+                break
+        prefiltered_count = screener.candidate_count()
+        evaluated_count = (
+            int(pool_metadata["universe_count"])
+            if pool_metadata is not None
+            else prefiltered_count
+        )
+        print(
+            f"Screening universe: {evaluated_count} securities / "
+            f"morning candidates: {prefiltered_count}"
+        )
         screening_date = connection.execute("SELECT MAX(trade_date) FROM price_daily").fetchone()[0]
         repository = StockRepository(connection)
         comments = {}
@@ -99,7 +175,10 @@ def main() -> int:
         report = DailyReportBuilder(connection).build()
     report_path = DailyReportBuilder.write(report, DailyReportBuilder.default_path(ROOT))
     print(f"Report written: {report_path}")
-    print(f"Screening: {profile} / {len(hits)} matching stocks")
+    print(
+        f"Screening: {effective_profile} / {len(hits)} matching stocks "
+        f"/ stage={relaxation_label}"
+    )
 
     if not args.notify:
         return 0
@@ -126,7 +205,10 @@ def main() -> int:
         warnings.append("チャートを更新できなかったため、今回はテキストのみ送信します。")
     notifier = LineNotifier(notification)
     if not delivery_hits:
-        message = format_screening_message(profile, hits, max_candidates, comments, screening_date)
+        message = format_screening_message(
+            effective_profile, hits, max_candidates, comments, screening_date,
+            evaluated_count, prefiltered_count if args.candidate_pool else None,
+        )
         if warnings:
             message += "\n\n注意:\n" + "\n".join(f"- {warning}" for warning in warnings)
         if database.was_notification_sent("line", message):
@@ -141,7 +223,9 @@ def main() -> int:
     for index, hit in enumerate(delivery_hits):
         code = str(hit["code"])
         message = format_candidate_message(
-            profile, hit, index + 1, len(delivery_hits), comments.get(code), screening_date,
+            effective_profile, hit, index + 1, len(delivery_hits), comments.get(code),
+            screening_date, evaluated_count,
+            prefiltered_count if args.candidate_pool else None,
         )
         if index == len(delivery_hits) - 1:
             omitted = len(hits) - len(delivery_hits)

@@ -66,6 +66,29 @@ class DataLoaderTestCase(unittest.TestCase):
         self.assertEqual(kwargs["start"], "2026-01-03")
         self.assertNotIn("period", kwargs)
 
+    def test_batch_download_saves_each_ticker(self) -> None:
+        index = pd.date_range("2026-01-01", periods=2, freq="D")
+        columns = pd.MultiIndex.from_product([
+            ["7203.T", "6758.T"], ["Open", "High", "Low", "Close", "Volume"],
+        ])
+        values = [
+            [100, 101, 99, 100.5, 1000, 200, 202, 198, 201, 2000],
+            [101, 102, 100, 101.5, 1100, 201, 203, 199, 202, 2100],
+        ]
+        prices = pd.DataFrame(values, index=index, columns=columns)
+        with patch("modules.data_loader.yf.download", return_value=prices) as download:
+            result = self.loader.load_yfinance_batch(
+                [("7203.T", "72030"), ("6758.T", "67580")], "10d"
+            )
+        self.assertEqual(len(result["updated"]), 2)
+        self.assertEqual(result["failed"], [])
+        self.assertEqual(download.call_args.kwargs["period"], "10d")
+        with self.db.connect() as connection:
+            count = connection.execute(
+                "SELECT COUNT(DISTINCT code) FROM price_daily"
+            ).fetchone()[0]
+        self.assertEqual(count, 2)
+
     def test_jquants_v2_abbreviated_financial_columns_are_normalized(self) -> None:
         saved = self.loader._save_financial([{
             "Code": "72030", "DiscDate": "2026-01-05", "DocType": "FY", "CurFYEn": "2025-12-31",
