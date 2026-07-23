@@ -284,6 +284,8 @@ class RuleAndMetricTestCase(unittest.TestCase):
     def test_daily_update_ticker_translation(self) -> None:
         self.assertEqual(DailyUpdateJob.ticker_for_code("72030", ".T"), "7203.T")
         self.assertEqual(DailyUpdateJob.ticker_for_code("7203", ".T"), "7203.T")
+        self.assertEqual(DailyUpdateJob.ticker_for_code("378A0", ".T"), "378A.T")
+        self.assertEqual(DailyUpdateJob.ticker_for_code("130A0", ".T"), "130A.T")
         self.assertEqual(DailyUpdateJob.ticker_for_code("^N225", ".T"), "^N225")
         self.assertEqual(DailyUpdateJob.ticker_for_code("AAPL", ".T"), "AAPL")
         self.assertEqual(DailyUpdateJob.incremental_start("2026-01-10", 7), "2026-01-03")

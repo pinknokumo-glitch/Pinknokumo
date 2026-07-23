@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-operations-status",
+    [string]$Branch = "agent/alphanumeric-ticker-fix",
     [switch]$RunWorkflow
 )
 
@@ -58,8 +58,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Show full-market screening operations in Android" `
-    --body "Adds a read-only operations status API and Android display for the latest evening universe refresh, morning candidate update, final hit count, failures, and relaxation stage. The morning pipeline now records its final screening result for this view.").Trim()
+    --title "Fix alphanumeric TSE ticker conversion" `
+    --body "Converts J-Quants five-character alphanumeric security codes such as 378A0 to Yahoo Finance tickers such as 378A.T. This fixes the dominant failure in the first full-market refresh while preserving index and foreign symbols.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
