@@ -19,6 +19,22 @@ data class DailyReport(
     val marketRegimes: List<MarketRegime>,
     val jobs: List<JobRun>,
 )
+data class OperationsStatus(
+    val ready: Boolean,
+    val poolDate: String?,
+    val poolStatus: String?,
+    val universeCount: Int?,
+    val evaluatedCount: Int?,
+    val eveningUpdatedCount: Int?,
+    val eveningFailedCount: Int?,
+    val candidateCount: Int?,
+    val morningUpdatedCount: Int?,
+    val morningFailedCount: Int?,
+    val screeningDate: String?,
+    val hitCount: Int?,
+    val effectiveProfile: String?,
+    val relaxationLabel: String?,
+)
 data class Holding(
     val code: String,
     val companyName: String?,
@@ -133,6 +149,33 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
             )
         }
         return PortfolioSummary(value.getDouble("total_market_value"), positions)
+    }
+    fun operationsStatus(): OperationsStatus {
+        val value = get("/operations/status")
+        val pool = value.optJSONObject("pool")
+        val evening = value.optJSONObject("evening_update")?.optJSONObject("details")
+        val morning = value.optJSONObject("morning_update")?.optJSONObject("details")
+        val screening = value.optJSONObject("morning_screening")?.optJSONObject("details")
+        fun JSONObject?.optionalInt(name: String): Int? =
+            this?.takeIf { it.has(name) && !it.isNull(name) }?.getInt(name)
+        fun JSONObject?.optionalText(name: String): String? =
+            this?.optString(name)?.takeIf { it.isNotEmpty() }
+        return OperationsStatus(
+            ready = value.optBoolean("ready"),
+            poolDate = pool.optionalText("pool_date"),
+            poolStatus = pool.optionalText("status"),
+            universeCount = pool.optionalInt("universe_count"),
+            evaluatedCount = pool.optionalInt("evaluated_count"),
+            eveningUpdatedCount = evening.optionalInt("updated_count"),
+            eveningFailedCount = evening.optionalInt("failed_count"),
+            candidateCount = pool.optionalInt("candidate_count"),
+            morningUpdatedCount = morning.optionalInt("updated_count"),
+            morningFailedCount = morning.optionalInt("failed_count"),
+            screeningDate = screening.optionalText("screening_date"),
+            hitCount = screening.optionalInt("hit_count"),
+            effectiveProfile = screening.optionalText("effective_profile"),
+            relaxationLabel = screening.optionalText("relaxation_label"),
+        )
     }
     fun watchlist(): List<WatchlistItem> = get("/watchlist").getJSONArray("watchlist").mapItems { item ->
         val value = item as JSONObject

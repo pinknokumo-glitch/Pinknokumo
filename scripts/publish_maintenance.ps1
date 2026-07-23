@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/two-stage-full-market-screening",
+    [string]$Branch = "agent/android-operations-status",
     [switch]$RunWorkflow
 )
 
@@ -28,12 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $sourceCommit = (& $git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the prepared commit." }
-$preparedCommits = @(
-    "6d1a64e1e848dddecbfb76cee69613a70c0dd0c2",
-    "e2c6cbc230fd69526f95496382618f0323598032",
-    "38a40fd3f18b38f7a9f15b0fe2a1b9805256b60e",
-    $sourceCommit
-)
+$preparedCommits = @($sourceCommit)
 
 $runtimeFiles = @(Get-ChildItem (Join-Path $root "work") -Filter "daily_report_*.json" -File -ErrorAction SilentlyContinue)
 $backupDir = Join-Path $root "data\publish-maintenance-backup"
@@ -63,8 +58,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add two-stage full-market screening and Supabase preferences" `
-    --body "Connects Android and daily runs to row-level-secured Supabase preferences, adds staged RSI relaxation, and expands screening to all current Prime, Standard, and Growth securities. A 17:17 JST workflow refreshes the full universe in bounded batches and saves a guarded candidate pool; the 10:07 JST workflow refreshes only those candidates before final screening and LINE delivery. Stale, incomplete, or failed price updates stop normal delivery. Credentials remain outside source control.").Trim()
+    --title "Show full-market screening operations in Android" `
+    --body "Adds a read-only operations status API and Android display for the latest evening universe refresh, morning candidate update, final hit count, failures, and relaxation stage. The morning pipeline now records its final screening result for this view.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

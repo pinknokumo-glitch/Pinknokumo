@@ -128,6 +128,14 @@ def jobs(limit: int = Query(default=20, ge=1, le=100)) -> dict:
     finally:
         connection.close()
 
+@app.get("/operations/status")
+def operations_status() -> dict:
+    connection, repo = repository()
+    try:
+        return repo.operations_status()
+    finally:
+        connection.close()
+
 @app.get("/watchlist")
 def watchlist() -> dict:
     db = Database(ROOT / settings()["database"]["path"])
