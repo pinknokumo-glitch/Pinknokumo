@@ -276,6 +276,7 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
 private fun OperationsScreen(onBack: () -> Unit, onWatchlist: () -> Unit) {
     var report by remember { mutableStateOf<DailyReport?>(null) }
     var portfolio by remember { mutableStateOf<PortfolioSummary?>(null) }
+    var operations by remember { mutableStateOf<OperationsStatus?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableIntStateOf(0) }
     LaunchedEffect(refreshToken) {
@@ -283,11 +284,12 @@ private fun OperationsScreen(onBack: () -> Unit, onWatchlist: () -> Unit) {
         runCatching {
             withContext(Dispatchers.IO) {
                 val api = ApiClient()
-                api.dailyReport() to api.portfolio()
+                Triple(api.dailyReport(), api.portfolio(), api.operationsStatus())
             }
-        }.onSuccess { (daily, holdings) ->
+        }.onSuccess { (daily, holdings, status) ->
             report = daily
             portfolio = holdings
+            operations = status
         }.onFailure { error = it.message }
     }
     Scaffold(topBar = {
@@ -302,6 +304,28 @@ private fun OperationsScreen(onBack: () -> Unit, onWatchlist: () -> Unit) {
     }) { padding ->
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
             error?.let { item { Text("APIへ接続できません: $it", color = MaterialTheme.colorScheme.error) } }
+            operations?.let { status ->
+                item {
+                    Text("運用状況", style = MaterialTheme.typography.titleLarge)
+                    Text(if (status.ready) "翌朝の判定準備：完了" else "翌朝の判定準備：未完了")
+                    Text("全銘柄更新日：${status.poolDate ?: "未取得"}")
+                    Text(
+                        "対象 ${status.universeCount ?: 0} / 判定済み ${status.evaluatedCount ?: 0} / " +
+                            "更新成功 ${status.eveningUpdatedCount ?: 0} / 失敗 ${status.eveningFailedCount ?: 0}"
+                    )
+                    Text("翌朝候補：${status.candidateCount ?: 0} 銘柄")
+                    Text(
+                        "朝の価格更新：成功 ${status.morningUpdatedCount ?: 0} / " +
+                            "失敗 ${status.morningFailedCount ?: 0}"
+                    )
+                    Text("最終判定日：${status.screeningDate ?: "未実行"} / 該当 ${status.hitCount ?: 0} 銘柄")
+                    Text(
+                        "使用条件：${status.effectiveProfile ?: "未実行"} / " +
+                            "${status.relaxationLabel ?: "緩和なし"}"
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
             report?.let { value ->
                 item { Text("状態: ${value.status}", style = MaterialTheme.typography.titleLarge) }
                 item { Text("集計日時: ${value.generatedAt}") }

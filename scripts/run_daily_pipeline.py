@@ -173,6 +173,16 @@ def main() -> int:
             backtest_comment = str(result["comment"]) if result and result.get("comment") else None
             comments[code] = AnalysisCommentary.integrated_comment(hit, backtest_comment)
         report = DailyReportBuilder(connection).build()
+    if args.candidate_pool:
+        database.save_job_run("morning_screening", "success", {
+            "screening_date": screening_date,
+            "configured_profile": profile,
+            "effective_profile": effective_profile,
+            "relaxation_label": relaxation_label,
+            "universe_count": evaluated_count,
+            "candidate_count": prefiltered_count,
+            "hit_count": len(hits),
+        })
     report_path = DailyReportBuilder.write(report, DailyReportBuilder.default_path(ROOT))
     print(f"Report written: {report_path}")
     print(

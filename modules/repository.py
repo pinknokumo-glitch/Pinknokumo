@@ -164,3 +164,34 @@ class StockRepository:
             [limit],
         ).fetchall()
         return [{**dict(row), "details": json.loads(row["details_json"])} for row in rows]
+
+    def operations_status(self) -> dict[str, object]:
+        """Return the latest evening/morning screening state for operator UIs."""
+        pool = self.conn.execute(
+            """SELECT pool_date, universe_count, evaluated_count, candidate_count,
+                      failed_count, status, created_at
+               FROM screening_pool_run ORDER BY pool_date DESC LIMIT 1"""
+        ).fetchone()
+
+        def latest_job(name: str) -> dict[str, object] | None:
+            row = self.conn.execute(
+                """SELECT status, details_json, started_at, finished_at
+                   FROM job_run WHERE job_name=? ORDER BY id DESC LIMIT 1""",
+                [name],
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "status": row["status"],
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
+                "details": json.loads(row["details_json"]),
+            }
+
+        return {
+            "ready": pool is not None and pool["status"] == "success",
+            "pool": dict(pool) if pool is not None else None,
+            "evening_update": latest_job("evening_universe"),
+            "morning_update": latest_job("morning_candidates"),
+            "morning_screening": latest_job("morning_screening"),
+        }

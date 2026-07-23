@@ -26,6 +26,12 @@ class ApiContractTestCase(unittest.TestCase):
         jobs = self.client.get("/jobs")
         self.assertEqual(jobs.status_code, 200)
         self.assertIn("jobs", jobs.json())
+        operations = self.client.get("/operations/status")
+        self.assertEqual(operations.status_code, 200)
+        self.assertTrue(
+            {"ready", "pool", "evening_update", "morning_update", "morning_screening"}
+            <= operations.json().keys()
+        )
 
     def test_read_models(self) -> None:
         for path, key in (

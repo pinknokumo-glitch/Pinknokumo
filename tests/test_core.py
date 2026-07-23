@@ -103,6 +103,28 @@ class DatabaseTestCase(unittest.TestCase):
         self.assertEqual(report["recent_jobs"][0]["details"]["updated"], ["72030"])
         self.assertEqual(report["market_regimes"][0]["regime"], "bullish")
 
+    def test_operations_status_combines_evening_and_morning_runs(self) -> None:
+        self.db.replace_candidate_pool(
+            "2026-07-23", [{"code": "72030"}],
+            universe_count=3800, evaluated_count=3798, failed_count=2,
+        )
+        self.db.save_job_run("evening_universe", "partial_failure", {
+            "updated_count": 3798, "failed_count": 2,
+        })
+        self.db.save_job_run("morning_candidates", "success", {
+            "updated_count": 1, "failed_count": 0,
+        })
+        self.db.save_job_run("morning_screening", "success", {
+            "screening_date": "2026-07-24", "effective_profile": "rsi_relaxed_daily",
+            "relaxation_label": "日足のみ緩和", "hit_count": 1,
+        })
+        with self.db.connect() as connection:
+            status = StockRepository(connection).operations_status()
+        self.assertFalse(status["ready"])
+        self.assertEqual(status["pool"]["universe_count"], 3800)
+        self.assertEqual(status["evening_update"]["details"]["failed_count"], 2)
+        self.assertEqual(status["morning_screening"]["details"]["hit_count"], 1)
+
     def test_chart_renderer_creates_svg_from_stored_prices(self) -> None:
         rows = []
         for day in range(1, 81):
