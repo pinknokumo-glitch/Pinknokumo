@@ -162,7 +162,35 @@ class DataLoader:
 
     def load_jquants_financial(self, financial_code: str) -> int:
         """Refresh one security's financial disclosures without reloading the full master."""
-        return self._save_financial(self._jquants_client().get_fin_summary(code=financial_code))
+        cfg = self.settings["providers"]["jquants"]
+        attempts = max(1, int(cfg.get("retries", 1)))
+        delay = max(0.0, float(cfg.get("retry_delay_seconds", 0)))
+        client = self._jquants_client()
+        last_error = None
+        for attempt in range(attempts):
+            try:
+                return self._save_financial(client.get_fin_summary(code=financial_code))
+            except Exception as error:
+                last_error = error
+                if attempt + 1 < attempts:
+                    time.sleep(delay * (2 ** attempt))
+        raise RuntimeError(
+            f"Could not refresh J-Quants financials for {financial_code} "
+            f"after {attempts} attempts"
+        ) from last_error
+
+    def financial_is_fresh(self, code: str, maximum_age_hours: float) -> bool:
+        """Avoid repeatedly requesting disclosures that were refreshed recently."""
+        if maximum_age_hours <= 0:
+            return False
+        with self.db.connect() as connection:
+            row = connection.execute(
+                """SELECT (julianday('now') - julianday(MAX(updated_at))) * 24
+                   FROM financial WHERE code=?""",
+                [code],
+            ).fetchone()
+        age_hours = row[0] if row else None
+        return age_hours is not None and float(age_hours) <= maximum_age_hours
 
     def _jquants_client(self):
         load_dotenv()

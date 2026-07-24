@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
+import time
 
 from modules.daily_job import DailyUpdateJob
 from modules.data_loader import DataLoader
@@ -61,19 +62,31 @@ class MorningCandidateJob:
                         "code": item["code"], "ticker": item["ticker"],
                         "error": str(error),
                     })
-        financial_updated, financial_failed = [], []
+        financial_updated, financial_failed, financial_skipped = [], [], []
+        jquants = self.settings["providers"].get("jquants", {})
+        cache_hours = float(jquants.get("financial_cache_hours", 0))
+        request_interval = max(
+            0.0, float(jquants.get("request_interval_seconds", 0))
+        )
         for code in codes:
+            if self.loader.financial_is_fresh(code, cache_hours):
+                financial_skipped.append({"code": code, "reason": "fresh_cache"})
+                continue
             try:
                 count = self.loader.load_jquants_financial(code)
                 financial_updated.append({"code": code, "financial_rows": count})
             except Exception as error:
                 financial_failed.append({"code": code, "error": str(error)})
+            finally:
+                if request_interval:
+                    time.sleep(request_interval)
         result = {
             "candidate_count": len(codes),
             "updated": updated,
             "failed": failed,
             "financial_updated": financial_updated,
             "financial_failed": financial_failed,
+            "financial_skipped": financial_skipped,
             "watchlist_count": len(codes),
             "market_index_count": 0,
         }

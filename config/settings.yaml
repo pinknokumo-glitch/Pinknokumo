@@ -19,6 +19,10 @@ providers:
     enabled: true
     api_key_env: JQUANTS_API_KEY
     daily_financial_update: true
+    financial_cache_hours: 72
+    request_interval_seconds: 1
+    retries: 4
+    retry_delay_seconds: 3
 
 resampling:
   weekly_rule: W-FRI
