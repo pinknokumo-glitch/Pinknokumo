@@ -70,6 +70,10 @@ def main() -> int:
     parser.add_argument("--notify", action="store_true", help="Publish charts and send the result to LINE")
     parser.add_argument("--skip-update", action="store_true", help="Use the data currently stored in SQLite")
     parser.add_argument("--skip-backtest", action="store_true", help="Skip score and commentary refresh")
+    parser.add_argument(
+        "--backtest-matches", action="store_true",
+        help="Backtest only matching stocks, then rerun screening with refreshed scores",
+    )
     parser.add_argument("--holding-days", type=int, default=60)
     parser.add_argument("--profile", default=None)
     parser.add_argument("--repository", default="pinknokumo-glitch/Pinknokumo")
@@ -154,6 +158,28 @@ def main() -> int:
             print(f"Screening stage: {stage_label} / {len(hits)} matching stocks")
             if hits:
                 break
+        if args.backtest_matches and hits:
+            matched_codes = [str(hit["code"]) for hit in hits]
+            analysis = BatchBacktester(
+                database, indicators, backtest, scoring
+            ).run(
+                effective_profile,
+                stage_rule,
+                args.holding_days,
+                codes=matched_codes,
+            )
+            database.save_job_run(
+                "candidate_backtest",
+                "success" if not analysis["failed_count"] else "partial_failure",
+                analysis,
+            )
+            print(json.dumps({"candidate_backtest": {
+                "profile": effective_profile,
+                "requested_count": len(matched_codes),
+                "processed_count": analysis["processed_count"],
+                "failed_count": analysis["failed_count"],
+            }}, ensure_ascii=False, indent=2))
+            hits = screener.run(effective_profile, stage_rule)
         prefiltered_count = screener.candidate_count()
         evaluated_count = (
             int(pool_metadata["universe_count"])
@@ -169,7 +195,7 @@ def main() -> int:
         comments = {}
         for hit in hits:
             code = str(hit["code"])
-            result = repository.latest_backtest_result(code, profile)
+            result = repository.latest_backtest_result(code, effective_profile)
             backtest_comment = str(result["comment"]) if result and result.get("comment") else None
             comments[code] = AnalysisCommentary.integrated_comment(hit, backtest_comment)
         report = DailyReportBuilder(connection).build()
