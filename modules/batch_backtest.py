@@ -21,13 +21,23 @@ class BatchBacktester:
         self.scorer = ExpectationScorer(scoring_config)
         self.commentary = AnalysisCommentary()
 
-    def run(self, profile_name: str, rule: Mapping[str, object], holding_days: int, limit: int | None = None) -> dict[str, object]:
-        with self.db.connect() as conn:
-            codes = [row[0] for row in conn.execute(
-                """SELECT DISTINCT code FROM price_daily
-                   WHERE code NOT IN (SELECT DISTINCT market_code FROM market_regime)
-                   ORDER BY code"""
-            )]
+    def run(
+        self,
+        profile_name: str,
+        rule: Mapping[str, object],
+        holding_days: int,
+        limit: int | None = None,
+        codes: list[str] | None = None,
+    ) -> dict[str, object]:
+        if codes is None:
+            with self.db.connect() as conn:
+                codes = [row[0] for row in conn.execute(
+                    """SELECT DISTINCT code FROM price_daily
+                       WHERE code NOT IN (SELECT DISTINCT market_code FROM market_regime)
+                       ORDER BY code"""
+                )]
+        else:
+            codes = list(dict.fromkeys(str(code) for code in codes))
         if limit is not None:
             codes = codes[:limit]
         completed, failed = [], []

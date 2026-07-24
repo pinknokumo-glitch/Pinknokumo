@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/jst-and-coverage-guard",
+    [string]$Branch = "agent/candidate-backtest-notifications",
     [switch]$RunWorkflow
 )
 
@@ -25,6 +25,21 @@ if ($LASTEXITCODE -ne 0) { throw "Publish audit failed." }
 $env:PYTHONWARNINGS = "ignore::DeprecationWarning"
 & $python -m unittest discover -s tests -q
 if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
+
+$publishFiles = @(
+    ".github/workflows/daily.yml",
+    "modules/batch_backtest.py",
+    "scripts/run_daily_pipeline.py",
+    "scripts/publish_maintenance.ps1",
+    "tests/test_batch_backtest.py"
+)
+& $git add -- $publishFiles
+if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
+$staged = (& $git diff --cached --name-only)
+if ($staged) {
+    & $git commit -m "Add candidate backtesting to LINE notifications"
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
+}
 
 $sourceCommit = (& $git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the prepared commit." }
@@ -58,8 +73,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Use JST alerts and coverage-based evening readiness" `
-    --body "Formats cloud failure alerts explicitly in Asia/Tokyo time. Evening full-market refreshes are now usable with recorded warnings when at least 95% of the universe is evaluated, while lower coverage and morning candidate price failures still stop normal delivery.").Trim()
+    --title "Add candidate backtesting to LINE notifications" `
+    --body "Backtests only stocks that match the effective screening stage, including automatically relaxed rules. The refreshed expectation scores and historical statistics are then used to rerank candidates and populate each LINE commentary without backtesting the full market every morning.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
@@ -68,13 +83,13 @@ if ($LASTEXITCODE -ne 0) { throw "Could not merge the pull request." }
 Write-Output "Merged maintenance update into main."
 
 if ($RunWorkflow) {
-    & $gh workflow run evening.yml --repo $Repository --ref main
+    & $gh workflow run daily.yml --repo $Repository --ref main
     if ($LASTEXITCODE -ne 0) { throw "Could not start the cloud workflow." }
     Start-Sleep -Seconds 3
-    $runId = (& $gh run list --repo $Repository --workflow evening.yml --limit 1 --json databaseId --jq '.[0].databaseId').Trim()
-    Write-Output "Started evening workflow run: $runId"
+    $runId = (& $gh run list --repo $Repository --workflow daily.yml --limit 1 --json databaseId --jq '.[0].databaseId').Trim()
+    Write-Output "Started daily workflow run: $runId"
     Write-Output "Monitor with: gh run watch $runId --repo $Repository"
-    Write-Output "The morning LINE workflow was not started."
+    Write-Output "The morning candidate backtest and LINE workflow was started."
 }
 else {
     Write-Output "Workflow was not started; no LINE notification was requested."
