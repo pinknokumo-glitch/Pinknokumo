@@ -17,6 +17,7 @@ from modules.daily_job import DailyUpdateJob  # noqa: E402
 from modules.ai_comment import AnalysisCommentary  # noqa: E402
 from modules.batch_backtest import BatchBacktester  # noqa: E402
 from modules.cloud_preferences import CloudPreferenceClient, apply_preference  # noqa: E402
+from modules.cloud_results import CloudResultPublisher  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.github_publisher import GitHubPublisher  # noqa: E402
 from modules.morning_candidates import MorningCandidateJob  # noqa: E402
@@ -233,6 +234,16 @@ def main() -> int:
         except Exception as error:
             chart_warning = f"チャート更新失敗: {type(error).__name__}"
             print(f"Warning: {chart_warning}")
+    cloud_publisher = CloudResultPublisher.from_environment()
+    if cloud_publisher is not None and delivery_hits:
+        try:
+            published_count = cloud_publisher.publish(
+                str(screening_date), effective_profile, delivery_hits,
+                comments, chart_urls,
+            )
+            print(f"Cloud screening results: published={published_count}")
+        except RuntimeError as error:
+            print(f"Warning: cloud screening results were not published: {error}")
     warnings = []
     if update and (update.get("failed") or update.get("financial_failed")):
         failed_count = len(update.get("failed", [])) + len(update.get("financial_failed", []))

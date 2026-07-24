@@ -7,6 +7,17 @@ import java.net.URL
 
 data class SupabaseSession(val accessToken: String, val userId: String, val email: String)
 
+data class CloudScreeningResult(
+    val screeningDate: String,
+    val profile: String,
+    val position: Int,
+    val code: String,
+    val companyName: String?,
+    val expectationScore: Double?,
+    val comment: String?,
+    val chartUrl: String?,
+)
+
 data class CloudPreference(
     val mode: String,
     val genreId: String?,
@@ -70,6 +81,32 @@ class SupabaseClient(
             "POST", "/rest/v1/screening_preferences?on_conflict=user_id", payload, session.accessToken,
             mapOf("Prefer" to "resolution=merge-duplicates,return=representation"),
         )
+    }
+
+    fun loadLatestResults(session: SupabaseSession): List<CloudScreeningResult> {
+        val response = requestArray(
+            "GET",
+            "/rest/v1/screening_results?user_id=eq.${session.userId}" +
+                "&select=screening_date,profile_name,position,code,company_name,expectation_score,comment,chart_url" +
+                "&order=screening_date.desc,position.asc&limit=10",
+            token = session.accessToken,
+        )
+        if (response.length() == 0) return emptyList()
+        val latestDate = response.getJSONObject(0).getString("screening_date")
+        return (0 until response.length()).map { response.getJSONObject(it) }
+            .takeWhile { it.getString("screening_date") == latestDate }
+            .map { row ->
+                CloudScreeningResult(
+                    screeningDate = row.getString("screening_date"),
+                    profile = row.getString("profile_name"),
+                    position = row.getInt("position"),
+                    code = row.getString("code"),
+                    companyName = row.optString("company_name").takeIf { it.isNotEmpty() },
+                    expectationScore = row.optDouble("expectation_score").takeUnless { it.isNaN() },
+                    comment = row.optString("comment").takeIf { it.isNotEmpty() },
+                    chartUrl = row.optString("chart_url").takeIf { it.isNotEmpty() },
+                )
+            }
     }
 
     private fun request(method: String, path: String, payload: JSONObject? = null, token: String? = null): JSONObject =

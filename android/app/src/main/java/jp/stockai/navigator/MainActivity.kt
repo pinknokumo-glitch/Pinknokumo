@@ -437,7 +437,28 @@ private fun StockDetailScreen(code: String, onBack: () -> Unit) {
             item { PriceChart(prices, Modifier.fillMaxWidth().height(220.dp)) }
             error?.let { item { Text("APIへ接続できません: ${it}", color = MaterialTheme.colorScheme.error) } }
             item { Text("分析履歴", style = MaterialTheme.typography.titleLarge) }
-            items(history) { item -> ListItem(headlineContent = { Text(item.profile) }, supportingContent = { Text("${item.date} / ${item.type}") }) }
+            if (history.isEmpty()) item { Text("バックテスト結果はまだありません") }
+            items(history) { item ->
+                val score = item.expectationScore?.let { String.format("%.1f/100", it) } ?: "未算出"
+                val grade = item.grade?.let { "（$it）" } ?: ""
+                val statistics = buildList {
+                    item.tradeCount?.let { add("取引 ${it}件") }
+                    item.winRatePercent?.let { add("勝率 ${String.format("%.1f", it)}%") }
+                    item.averageReturnPercent?.let { add("平均 ${String.format("%.2f", it)}%") }
+                    item.maxDrawdownPercent?.let { add("最大下落 ${String.format("%.2f", it)}%") }
+                }.joinToString(" / ")
+                ListItem(
+                    headlineContent = { Text("${item.profile}　期待値 $score$grade") },
+                    supportingContent = {
+                        Column {
+                            Text("${item.date} / ${item.type}")
+                            if (statistics.isNotEmpty()) Text(statistics)
+                            item.comment?.let { Text(it) }
+                        }
+                    },
+                )
+                HorizontalDivider()
+            }
         }
     }
 }

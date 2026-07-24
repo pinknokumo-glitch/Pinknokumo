@@ -85,7 +85,7 @@ class Screener:
             values["fundamental.disclosed_date"] = financial["disclosed_date"]
             trailing_dividends = None
             if daily_frame is not None and not daily_frame.empty:
-                cutoff = daily_frame["trade_date"].max() - pd.Timedelta(days=365)
+                cutoff = daily_frame["trade_date"].max() - pd.DateOffset(days=365)
                 trailing_dividends = daily_frame.loc[daily_frame["trade_date"] > cutoff, "dividends"].fillna(0).sum()
             values.update({f"fundamental.{name}": value for name, value in self.fundamentals.latest_values(dict(financial), values["daily.close"], trailing_dividends).items()})
         return values

@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/jquants-rate-limit-protection",
+    [string]$Branch = "agent/android-backtest-details",
     [switch]$RunWorkflow
 )
 
@@ -28,20 +28,28 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $publishFiles = @(
     ".github/workflows/daily.yml",
+    "android/app/src/main/java/jp/stockai/navigator/ApiClient.kt",
+    "android/app/src/main/java/jp/stockai/navigator/MainActivity.kt",
+    "android/app/src/main/java/jp/stockai/navigator/SupabaseClient.kt",
     "config/settings.yaml",
     "modules/batch_backtest.py",
     "modules/data_loader.py",
     "modules/morning_candidates.py",
+    "modules/cloud_results.py",
+    "modules/screener.py",
+    "requirements.txt",
     "scripts/run_daily_pipeline.py",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
+    "supabase/screening_results.sql",
+    "tests/test_cloud_results.py",
     "tests/test_data_loader.py"
 )
 & $git add -- $publishFiles
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Reduce J-Quants rate-limit failures"
+    & $git commit -m "Show backtest details in Android"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -77,8 +85,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Reduce J-Quants rate-limit failures" `
-    --body "Reuses recently refreshed financial disclosures, spaces required J-Quants requests, and retries transient failures with exponential backoff. This reduces HTTP 429 responses while preserving stored fundamentals for screening, backtesting, and LINE commentary.").Trim()
+    --title "Show backtest details in Android" `
+    --body "Displays each stored expectation score, grade, trade count, win rate, average return, maximum drawdown, and factual backtest comment on the Android stock detail screen. Also keeps the pandas runtime compatibility cleanup prepared in the same maintenance update.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
