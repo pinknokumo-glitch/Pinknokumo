@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -14,6 +15,11 @@ sys.path.insert(0, str(ROOT))
 from modules.notifier import LineNotifier  # noqa: E402
 
 
+def japan_timestamp(now: datetime | None = None) -> str:
+    value = now or datetime.now(tz=ZoneInfo("Asia/Tokyo"))
+    return value.astimezone(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M JST")
+
+
 def main() -> int:
     with (ROOT / "config" / "notification.yaml").open(encoding="utf-8") as file:
         config = yaml.safe_load(file)
@@ -21,7 +27,7 @@ def main() -> int:
     run_id = os.getenv("GITHUB_RUN_ID", "")
     job_label = os.getenv("STOCKAI_JOB_LABEL", "日次処理")
     run_url = f"https://github.com/{repository}/actions/runs/{run_id}" if run_id else "GitHub Actionsを確認してください。"
-    timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    timestamp = japan_timestamp()
     message = (
         "StockAI Navigator 障害通知\n"
         f"{job_label}が正常に完了しませんでした。\n発生時刻: {timestamp}\n確認: {run_url}\n"

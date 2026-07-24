@@ -72,6 +72,31 @@ class EveningUniverseTests(unittest.TestCase):
         self.assertEqual(metadata["status"], "success")
         self.assertEqual(codes, ["11110"])
 
+    def test_run_is_usable_with_warnings_above_minimum_coverage(self) -> None:
+        self.settings["screening_universe"].update({
+            "markets": ["プライム"],
+            "prefilter": {"weekly_rsi_max": 50, "monthly_rsi_max": 25},
+        })
+        self.job._refresh_prices = lambda codes: {
+            "updated_count": 2, "failed_count": 1,
+            "failed": [{"code": "33330"}],
+        }
+        self.job._build_pool = lambda codes, prefilter, failed_count: {
+            "pool_date": "2026-07-24", "evaluated_count": 96,
+            "candidate_count": 3, "weekly_rsi_max": 50.0,
+            "monthly_rsi_max": 25.0,
+        }
+        self.database.screening_universe_codes = lambda: [str(index) for index in range(100)]
+        self.database.sync_screening_universe = lambda markets: 100
+        result = self.job.run()
+        self.assertTrue(result["usable"])
+        self.assertEqual(result["coverage_ratio"], 0.96)
+        with self.database.connect() as connection:
+            status = connection.execute(
+                "SELECT status FROM job_run ORDER BY id DESC LIMIT 1"
+            ).fetchone()[0]
+        self.assertEqual(status, "success_with_warnings")
+
 
 if __name__ == "__main__":
     unittest.main()

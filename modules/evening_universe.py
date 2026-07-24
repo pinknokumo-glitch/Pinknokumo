@@ -41,7 +41,18 @@ class EveningUniverseJob:
             **refresh,
             **pool,
         }
-        status = "success" if not refresh["failed"] else "partial_failure"
+        minimum_coverage = float(universe_config.get("minimum_coverage_ratio", 0.95))
+        coverage = (
+            int(pool["evaluated_count"]) / universe_count if universe_count else 0.0
+        )
+        usable = coverage >= minimum_coverage
+        result["coverage_ratio"] = round(coverage, 4)
+        result["usable"] = usable
+        status = (
+            "success" if not refresh["failed"]
+            else "success_with_warnings" if usable
+            else "partial_failure"
+        )
         self.database.save_job_run("evening_universe", status, result)
         return result
 

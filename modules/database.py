@@ -282,11 +282,7 @@ class Database:
                 "screening_candidate_pool", rows, ["pool_date", "code"]
             )
         coverage = evaluated_count / universe_count if universe_count else 0.0
-        status = (
-            "success"
-            if failed_count == 0 and coverage >= minimum_coverage_ratio
-            else "partial_failure"
-        )
+        status = "success" if coverage >= minimum_coverage_ratio else "partial_failure"
         self.upsert_rows("screening_pool_run", [{
             "pool_date": pool_date,
             "universe_count": universe_count,

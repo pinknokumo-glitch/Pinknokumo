@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/alphanumeric-ticker-fix",
+    [string]$Branch = "agent/jst-and-coverage-guard",
     [switch]$RunWorkflow
 )
 
@@ -58,8 +58,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Fix alphanumeric TSE ticker conversion" `
-    --body "Converts J-Quants five-character alphanumeric security codes such as 378A0 to Yahoo Finance tickers such as 378A.T. This fixes the dominant failure in the first full-market refresh while preserving index and foreign symbols.").Trim()
+    --title "Use JST alerts and coverage-based evening readiness" `
+    --body "Formats cloud failure alerts explicitly in Asia/Tokyo time. Evening full-market refreshes are now usable with recorded warnings when at least 95% of the universe is evaluated, while lower coverage and morning candidate price failures still stop normal delivery.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
