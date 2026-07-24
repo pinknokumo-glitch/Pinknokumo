@@ -22,6 +22,13 @@ class CloudPreferenceTestCase(unittest.TestCase):
             self.assertIsNone(CloudPreferenceClient.from_environment())
         with patch.dict(os.environ, {"SUPABASE_URL": "https://example.supabase.co"}, clear=True):
             self.assertIsNone(CloudPreferenceClient.from_environment())
+        with patch.dict(os.environ, {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_test",
+        }, clear=True):
+            client = CloudPreferenceClient.from_environment()
+            self.assertIsNotNone(client)
+            self.assertIsNone(client.user_id)
 
     def test_auto_and_manual_preferences_are_validated(self) -> None:
         auto = CloudPreferenceClient.validate({"mode": "auto", "genre_id": "value"}, self.options)
@@ -89,6 +96,21 @@ class CloudPreferenceTestCase(unittest.TestCase):
             android_payload["manual_conditions"],
         )
         self.assertIn("user_id=eq.user-1", send.call_args.args[0].full_url)
+
+    def test_latest_saved_user_is_discovered_without_manual_user_secret(self) -> None:
+        payload = [{
+            "user_id": "user-2", "mode": "auto", "genre_id": "value",
+            "manual_logic": "all", "manual_conditions": [],
+        }]
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = json.dumps(payload).encode("utf-8")
+        client = CloudPreferenceClient("https://example.supabase.co", "sb_secret_test")
+        with patch("modules.cloud_preferences.urlopen", return_value=response) as send:
+            preference = client.fetch(self.options)
+        self.assertEqual(preference.user_id, "user-2")
+        self.assertIn("order=updated_at.desc", send.call_args.args[0].full_url)
+        self.assertNotIn("user_id=eq.", send.call_args.args[0].full_url)
 
 
 if __name__ == "__main__":

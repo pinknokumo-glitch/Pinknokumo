@@ -11,6 +11,10 @@ create table if not exists public.screening_preferences (
 
 alter table public.screening_preferences enable row level security;
 
+grant select, insert, update
+on table public.screening_preferences
+to authenticated;
+
 drop policy if exists "read own screening preference" on public.screening_preferences;
 create policy "read own screening preference"
 on public.screening_preferences for select

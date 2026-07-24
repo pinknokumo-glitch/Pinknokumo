@@ -18,6 +18,10 @@ on public.screening_results (user_id, screening_date desc, position);
 
 alter table public.screening_results enable row level security;
 
+grant select
+on table public.screening_results
+to authenticated;
+
 drop policy if exists "read own screening results" on public.screening_results;
 create policy "read own screening results"
 on public.screening_results for select

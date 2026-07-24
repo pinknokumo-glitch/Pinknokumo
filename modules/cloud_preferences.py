@@ -14,6 +14,7 @@ from modules.screening_options import ScreeningOptions
 
 @dataclass(frozen=True)
 class ScreeningPreference:
+    user_id: str | None
     mode: str
     genre_id: str | None
     manual_logic: str
@@ -21,22 +22,27 @@ class ScreeningPreference:
 
 
 class CloudPreferenceClient:
-    def __init__(self, url: str, service_role_key: str, user_id: str) -> None:
+    def __init__(self, url: str, service_role_key: str, user_id: str | None = None) -> None:
         self.url = url.rstrip("/")
         self.key = service_role_key
         self.user_id = user_id
 
     @classmethod
     def from_environment(cls) -> "CloudPreferenceClient | None":
-        values = [os.getenv(name, "").strip() for name in (
-            "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "STOCKAI_USER_ID",
-        )]
-        return cls(*values) if all(values) else None
+        url = os.getenv("SUPABASE_URL", "").strip()
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        user_id = os.getenv("STOCKAI_USER_ID", "").strip() or None
+        return cls(url, key, user_id) if url and key else None
 
     def fetch(self, options: ScreeningOptions) -> ScreeningPreference | None:
+        filters = (
+            f"user_id=eq.{quote(self.user_id)}&"
+            if self.user_id
+            else "order=updated_at.desc&"
+        )
         endpoint = (
-            f"{self.url}/rest/v1/screening_preferences?user_id=eq.{quote(self.user_id)}"
-            "&select=mode,genre_id,manual_logic,manual_conditions&limit=1"
+            f"{self.url}/rest/v1/screening_preferences?{filters}"
+            "select=user_id,mode,genre_id,manual_logic,manual_conditions&limit=1"
         )
         request = Request(endpoint, headers=self.headers())
         try:
@@ -73,7 +79,8 @@ class CloudPreferenceClient:
         else:
             options.manual_rule(conditions, logic)
             genre_id = None
-        return ScreeningPreference(mode, genre_id, logic, [dict(item) for item in conditions])
+        user_id = str(raw.get("user_id") or "") or None
+        return ScreeningPreference(user_id, mode, genre_id, logic, [dict(item) for item in conditions])
 
 
 def apply_preference(

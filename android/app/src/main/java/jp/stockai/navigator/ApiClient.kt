@@ -67,6 +67,27 @@ data class StockOverview(
 )
 data class RelativePerformance(val sessions: Int, val excessReturnPercent: Double)
 
+fun builtInScreeningOptions(): ScreeningOptions = ScreeningOptions(
+    genres = listOf(
+        ScreeningGenre("value", "割安株", "PER・PBR・財務健全性を重視します。", "value", "baseline"),
+        ScreeningGenre("high_dividend", "高配当株", "実績配当利回り・自己資本比率・営業CFを重視します。", "high_dividend", "baseline"),
+        ScreeningGenre("growth", "成長株", "ROE・営業利益率・中期上昇トレンドを重視します。", "growth", "baseline"),
+        ScreeningGenre("momentum", "上昇モメンタム", "移動平均とMACDによる上昇傾向を重視します。", "momentum", "baseline"),
+        ScreeningGenre("rebound", "反発候補", "RSIの改善を重視します。", "rsi_rebound", "baseline"),
+        ScreeningGenre("adjustment", "調整局面", "日・週・月のRSIが低い銘柄を探します。", "oversold", "needs_validation"),
+    ),
+    manualFields = listOf(
+        ManualField("daily.rsi_14", "日足RSI", 0.0, 100.0, "<="),
+        ManualField("weekly.rsi_14", "週足RSI", 0.0, 100.0, "<="),
+        ManualField("monthly.rsi_14", "月足RSI", 0.0, 100.0, "<="),
+        ManualField("fundamental.per", "PER", 0.0, 200.0, "<="),
+        ManualField("fundamental.pbr", "PBR", 0.0, 20.0, "<="),
+        ManualField("fundamental.roe", "ROE", -100.0, 200.0, ">="),
+        ManualField("fundamental.equity_ratio", "自己資本比率", 0.0, 100.0, ">="),
+        ManualField("fundamental.dividend_yield", "配当利回り", 0.0, 30.0, ">="),
+    ),
+)
+
 class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
     private fun get(path: String): JSONObject {
         val connection = URL(baseUrl + path).openConnection() as HttpURLConnection

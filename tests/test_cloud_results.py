@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +9,16 @@ from modules.cloud_results import CloudResultPublisher
 
 
 class CloudResultPublisherTests(unittest.TestCase):
+    def test_explicit_preference_user_replaces_optional_environment_user(self) -> None:
+        with patch.dict(os.environ, {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "sb_secret_test",
+            "STOCKAI_USER_ID": "legacy-user",
+        }, clear=True):
+            publisher = CloudResultPublisher.from_environment("latest-user")
+        self.assertIsNotNone(publisher)
+        self.assertEqual(publisher.user_id, "latest-user")
+
     def test_publish_uses_user_scoped_upsert_rows(self) -> None:
         publisher = CloudResultPublisher(
             "https://example.supabase.co", "sb_secret_test", "user-1"
