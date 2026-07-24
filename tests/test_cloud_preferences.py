@@ -112,6 +112,21 @@ class CloudPreferenceTestCase(unittest.TestCase):
         self.assertIn("order=updated_at.desc", send.call_args.args[0].full_url)
         self.assertNotIn("user_id=eq.", send.call_args.args[0].full_url)
 
+    def test_holding_days_is_validated_and_defaults_to_sixty(self) -> None:
+        default = CloudPreferenceClient.validate(
+            {"mode": "auto", "genre_id": "value"}, self.options
+        )
+        self.assertEqual(default.holding_days, 60)
+        custom = CloudPreferenceClient.validate(
+            {"mode": "auto", "genre_id": "value", "holding_days": 20}, self.options
+        )
+        self.assertEqual(custom.holding_days, 20)
+        with self.assertRaises(ValueError):
+            CloudPreferenceClient.validate(
+                {"mode": "auto", "genre_id": "value", "holding_days": 251},
+                self.options,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

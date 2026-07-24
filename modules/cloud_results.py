@@ -5,6 +5,7 @@ import json
 import os
 from collections.abc import Mapping, Sequence
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
@@ -23,6 +24,8 @@ class CloudResultPublisher:
         self, screening_date: str, profile: str,
         hits: Sequence[Mapping[str, object]], comments: Mapping[str, str],
         chart_urls: Sequence[str],
+        holding_days: int | None = None,
+        condition_summary: str | None = None,
     ) -> int:
         rows = []
         for position, hit in enumerate(hits, start=1):
@@ -34,6 +37,8 @@ class CloudResultPublisher:
                 "expectation_score": hit.get("expectation_score"),
                 "reason": hit.get("reason"), "comment": comments.get(code),
                 "chart_url": chart_urls[position - 1] if position <= len(chart_urls) else None,
+                "holding_days": holding_days,
+                "condition_summary": condition_summary,
             })
         request = Request(
             f"{self.url}/rest/v1/screening_results"
@@ -51,6 +56,33 @@ class CloudResultPublisher:
             raise RuntimeError(
                 f"Could not publish cloud screening results: {type(error).__name__}"
             ) from error
+
+    def replace(
+        self, screening_date: str, profile: str,
+        hits: Sequence[Mapping[str, object]], comments: Mapping[str, str],
+        chart_urls: Sequence[str] = (),
+        holding_days: int | None = None,
+        condition_summary: str | None = None,
+    ) -> int:
+        """Replace one user's visible result set, including a valid zero-hit result."""
+        delete = Request(
+            f"{self.url}/rest/v1/screening_results?user_id=eq.{quote(self.user_id)}",
+            method="DELETE",
+            headers={**self.headers(), "Prefer": "return=minimal"},
+        )
+        try:
+            with urlopen(delete, timeout=20):
+                pass
+        except (HTTPError, URLError) as error:
+            raise RuntimeError(
+                f"Could not replace cloud screening results: {type(error).__name__}"
+            ) from error
+        if not hits:
+            return 0
+        return self.publish(
+            screening_date, profile, hits, comments, chart_urls,
+            holding_days, condition_summary,
+        )
 
     def headers(self) -> dict[str, str]:
         headers = {"apikey": self.key, "Accept": "application/json"}

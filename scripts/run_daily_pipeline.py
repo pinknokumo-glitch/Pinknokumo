@@ -75,7 +75,7 @@ def main() -> int:
         "--backtest-matches", action="store_true",
         help="Backtest only matching stocks, then rerun screening with refreshed scores",
     )
-    parser.add_argument("--holding-days", type=int, default=60)
+    parser.add_argument("--holding-days", type=int, default=None)
     parser.add_argument("--profile", default=None)
     parser.add_argument("--repository", default="pinknokumo-glitch/Pinknokumo")
     parser.add_argument(
@@ -93,6 +93,7 @@ def main() -> int:
     scoring = load_yaml("config/scoring.yaml")
     notification = load_yaml("config/notification.yaml")
     profile = args.profile or screening["active_profile"]
+    holding_days = args.holding_days or 60
     cloud_user_id = None
     if args.profile is None:
         cloud_client = CloudPreferenceClient.from_environment()
@@ -103,6 +104,8 @@ def main() -> int:
                 if preference is not None:
                     screening, profile = apply_preference(preference, options, screening)
                     cloud_user_id = preference.user_id
+                    if args.holding_days is None:
+                        holding_days = preference.holding_days
                     print(f"Cloud screening preference: {preference.mode} / {profile}")
                 else:
                     print("Cloud screening preference: no saved preference found")
@@ -131,7 +134,7 @@ def main() -> int:
         if rule is None:
             raise ValueError(f"Unknown profile: {profile}")
         analysis = BatchBacktester(database, indicators, backtest, scoring).run(
-            profile, rule, args.holding_days,
+            profile, rule, holding_days,
         )
         database.save_job_run(
             "daily_backtest",
@@ -170,7 +173,7 @@ def main() -> int:
             ).run(
                 effective_profile,
                 stage_rule,
-                args.holding_days,
+                holding_days,
                 codes=matched_codes,
             )
             database.save_job_run(

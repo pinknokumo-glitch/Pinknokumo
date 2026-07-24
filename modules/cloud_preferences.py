@@ -19,6 +19,7 @@ class ScreeningPreference:
     genre_id: str | None
     manual_logic: str
     manual_conditions: list[dict[str, object]]
+    holding_days: int = 60
 
 
 class CloudPreferenceClient:
@@ -42,7 +43,7 @@ class CloudPreferenceClient:
         )
         endpoint = (
             f"{self.url}/rest/v1/screening_preferences?{filters}"
-            "select=user_id,mode,genre_id,manual_logic,manual_conditions&limit=1"
+            "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days&limit=1"
         )
         request = Request(endpoint, headers=self.headers())
         try:
@@ -80,7 +81,28 @@ class CloudPreferenceClient:
             options.manual_rule(conditions, logic)
             genre_id = None
         user_id = str(raw.get("user_id") or "") or None
-        return ScreeningPreference(user_id, mode, genre_id, logic, [dict(item) for item in conditions])
+        holding_days = int(raw.get("holding_days") or 60)
+        if holding_days < 1 or holding_days > 250:
+            raise ValueError("cloud holding_days must be between 1 and 250")
+        return ScreeningPreference(
+            user_id, mode, genre_id, logic, [dict(item) for item in conditions], holding_days
+        )
+
+    def fetch_all(self, options: ScreeningOptions) -> list[ScreeningPreference]:
+        endpoint = (
+            f"{self.url}/rest/v1/screening_preferences?"
+            "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days"
+            "&order=updated_at.asc"
+        )
+        request = Request(endpoint, headers=self.headers())
+        try:
+            with urlopen(request, timeout=20) as response:
+                rows = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                f"Could not load cloud screening preferences: {type(error).__name__}"
+            ) from error
+        return [self.validate(row, options) for row in rows]
 
 
 def apply_preference(

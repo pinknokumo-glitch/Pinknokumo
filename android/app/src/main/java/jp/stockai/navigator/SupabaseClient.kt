@@ -8,7 +8,16 @@ import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
 
-data class SupabaseSession(val accessToken: String, val userId: String, val email: String)
+data class SupabaseSession(
+    val accessToken: String,
+    val refreshToken: String,
+    val userId: String,
+    val email: String,
+    val expiresAtEpochSeconds: Long,
+) {
+    fun needsRefresh(nowEpochSeconds: Long = Instant.now().epochSecond): Boolean =
+        expiresAtEpochSeconds <= nowEpochSeconds + 60
+}
 data class SupabaseRegistration(val session: SupabaseSession?, val confirmationRequired: Boolean)
 
 data class CloudScreeningResult(
@@ -20,6 +29,8 @@ data class CloudScreeningResult(
     val expectationScore: Double?,
     val comment: String?,
     val chartUrl: String?,
+    val holdingDays: Int?,
+    val conditionSummary: String?,
 )
 
 data class CloudPreference(
@@ -27,6 +38,7 @@ data class CloudPreference(
     val genreId: String?,
     val manualLogic: String = "all",
     val manualConditions: List<ManualCondition> = emptyList(),
+    val holdingDays: Int = 60,
 )
 
 class SupabaseClient(
@@ -42,8 +54,7 @@ class SupabaseClient(
             "POST", "/auth/v1/token?grant_type=password",
             JSONObject().put("email", email.trim()).put("password", password),
         )
-        val user = response.getJSONObject("user")
-        return SupabaseSession(response.getString("access_token"), user.getString("id"), user.optString("email", email.trim()))
+        return sessionFromResponse(response, email.trim())
     }
 
     fun signUp(email: String, password: String): SupabaseRegistration {
@@ -58,9 +69,8 @@ class SupabaseClient(
         )
         val accessToken = response.optString("access_token")
         if (accessToken.isBlank()) return SupabaseRegistration(null, confirmationRequired = true)
-        val user = response.getJSONObject("user")
         return SupabaseRegistration(
-            SupabaseSession(accessToken, user.getString("id"), user.optString("email", normalizedEmail)),
+            sessionFromResponse(response, normalizedEmail),
             confirmationRequired = false,
         )
     }
@@ -79,13 +89,31 @@ class SupabaseClient(
         val token = values["access_token"].orEmpty()
         if (token.isBlank()) return null
         val user = request("GET", "/auth/v1/user", token = token)
-        return SupabaseSession(token, user.getString("id"), user.optString("email"))
+        val expiresAt = values["expires_at"]?.toLongOrNull()
+            ?: (Instant.now().epochSecond + (values["expires_in"]?.toLongOrNull() ?: 3600))
+        return SupabaseSession(
+            token,
+            values["refresh_token"].orEmpty(),
+            user.getString("id"),
+            user.optString("email"),
+            expiresAt,
+        )
+    }
+
+    fun refreshSession(session: SupabaseSession): SupabaseSession {
+        require(session.refreshToken.isNotBlank()) { "再ログインが必要です" }
+        val response = request(
+            "POST", "/auth/v1/token?grant_type=refresh_token",
+            JSONObject().put("refresh_token", session.refreshToken),
+        )
+        return sessionFromResponse(response, session.email)
     }
 
     fun loadPreference(session: SupabaseSession): CloudPreference? {
         val response = requestArray(
             "GET",
-            "/rest/v1/screening_preferences?user_id=eq.${session.userId}&select=mode,genre_id,manual_logic,manual_conditions&limit=1",
+            "/rest/v1/screening_preferences?user_id=eq.${session.userId}" +
+                "&select=mode,genre_id,manual_logic,manual_conditions,holding_days&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
@@ -99,6 +127,7 @@ class SupabaseClient(
                 val item = conditions.getJSONObject(index)
                 ManualCondition(item.getString("field"), item.getString("operator"), item.getDouble("value"))
             },
+            holdingDays = row.optInt("holding_days", 60),
         )
     }
 
@@ -106,6 +135,7 @@ class SupabaseClient(
         require(preference.mode in setOf("auto", "manual")) { "保存モードが不正です" }
         require(preference.mode != "auto" || !preference.genreId.isNullOrBlank()) { "ジャンルを選択してください" }
         require(preference.manualConditions.size <= 8) { "手動条件は8件までです" }
+        require(preference.holdingDays in 1..250) { "保有営業日数は1～250日で入力してください" }
         val conditions = JSONArray().apply {
             preference.manualConditions.forEach { item ->
                 put(JSONObject().put("field", item.field).put("operator", item.operator).put("value", item.value))
@@ -117,6 +147,7 @@ class SupabaseClient(
             .put("genre_id", preference.genreId ?: JSONObject.NULL)
             .put("manual_logic", preference.manualLogic)
             .put("manual_conditions", conditions)
+            .put("holding_days", preference.holdingDays)
             .put("updated_at", Instant.now().toString())
         requestArray(
             "POST", "/rest/v1/screening_preferences?on_conflict=user_id", payload, session.accessToken,
@@ -129,6 +160,7 @@ class SupabaseClient(
             "GET",
             "/rest/v1/screening_results?user_id=eq.${session.userId}" +
                 "&select=screening_date,profile_name,position,code,company_name,expectation_score,comment,chart_url" +
+                ",holding_days,condition_summary" +
                 "&order=screening_date.desc,position.asc&limit=10",
             token = session.accessToken,
         )
@@ -146,6 +178,8 @@ class SupabaseClient(
                     expectationScore = row.optDouble("expectation_score").takeUnless { it.isNaN() },
                     comment = row.optString("comment").takeIf { it.isNotEmpty() },
                     chartUrl = row.optString("chart_url").takeIf { it.isNotEmpty() },
+                    holdingDays = row.optInt("holding_days").takeIf { !row.isNull("holding_days") },
+                    conditionSummary = row.optString("condition_summary").takeIf { it.isNotEmpty() },
                 )
             }
     }
@@ -191,6 +225,20 @@ class SupabaseClient(
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun sessionFromResponse(response: JSONObject, fallbackEmail: String): SupabaseSession {
+        val user = response.getJSONObject("user")
+        return SupabaseSession(
+            accessToken = response.getString("access_token"),
+            refreshToken = response.optString("refresh_token"),
+            userId = user.getString("id"),
+            email = user.optString("email", fallbackEmail),
+            expiresAtEpochSeconds = response.optLong(
+                "expires_at",
+                Instant.now().epochSecond + response.optLong("expires_in", 3600),
+            ),
+        )
     }
 
     private companion object {

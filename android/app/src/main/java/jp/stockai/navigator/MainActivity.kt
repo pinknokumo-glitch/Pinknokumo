@@ -25,29 +25,159 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private var callbackSession by mutableStateOf<SupabaseSession?>(null)
+    private lateinit var sessionStore: SessionStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        sessionStore = SessionStore(applicationContext)
         callbackSession = runCatching { SupabaseClient().sessionFromCallback(intent?.data) }.getOrNull()
-        setContent { StockAiApp(callbackSession) }
+        callbackSession?.let(sessionStore::save)
+        setContent {
+            var activeSession by remember { mutableStateOf<SupabaseSession?>(null) }
+            MaterialTheme {
+                val session = activeSession
+                if (session == null) {
+                    StartupLoginScreen(
+                        storedSession = callbackSession ?: sessionStore.load(),
+                        onAuthenticated = {
+                            sessionStore.save(it)
+                            activeSession = it
+                        },
+                    )
+                } else {
+                    StockAiApp(
+                        session = session,
+                        onLogout = {
+                            sessionStore.clear()
+                            activeSession = null
+                        },
+                    )
+                }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         callbackSession = runCatching { SupabaseClient().sessionFromCallback(intent.data) }.getOrNull()
+        callbackSession?.let(sessionStore::save)
     }
 }
 
 @Composable
-private fun StockAiApp(callbackSession: SupabaseSession?) {
+private fun StartupLoginScreen(
+    storedSession: SupabaseSession?,
+    onAuthenticated: (SupabaseSession) -> Unit,
+) {
+    val cloud = remember { SupabaseClient() }
+    val scope = rememberCoroutineScope()
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var authMode by remember { mutableStateOf("login") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("StockAI Navigator") }) }) { padding ->
+        Column(
+            Modifier.padding(padding).padding(24.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("ログイン", style = MaterialTheme.typography.headlineSmall)
+            Text("クラウド設定と配信結果を安全に同期します。")
+            storedSession?.let { saved ->
+                Button(
+                    enabled = !busy,
+                    onClick = {
+                        busy = true
+                        error = null
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    if (saved.needsRefresh()) cloud.refreshSession(saved) else saved
+                                }
+                            }.onSuccess(onAuthenticated)
+                                .onFailure {
+                                    error = "保存済みログインの有効期限が切れました。再ログインしてください。"
+                                }
+                            busy = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("${saved.email} でログイン") }
+                HorizontalDivider()
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilterChip(
+                    selected = authMode == "login",
+                    onClick = { authMode = "login"; error = null },
+                    label = { Text("ログイン") },
+                )
+                FilterChip(
+                    selected = authMode == "register",
+                    onClick = { authMode = "register"; error = null },
+                    label = { Text("新規登録") },
+                )
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            OutlinedTextField(
+                value = email, onValueChange = { email = it },
+                label = { Text("メール") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = password, onValueChange = { password = it },
+                label = { Text("パスワード") }, visualTransformation = PasswordVisualTransformation(),
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+            )
+            if (authMode == "register") {
+                OutlinedTextField(
+                    value = confirmPassword, onValueChange = { confirmPassword = it },
+                    label = { Text("パスワード（確認）") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Button(
+                enabled = !busy && email.isNotBlank() && password.isNotBlank(),
+                onClick = {
+                    busy = true
+                    error = null
+                    scope.launch {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                if (authMode == "register") {
+                                    require(password == confirmPassword) { "確認用パスワードが一致しません" }
+                                    cloud.signUp(email, password).session
+                                        ?: throw IllegalStateException(
+                                            "登録メールを送信しました。メール確認後に起動してください。"
+                                        )
+                                } else {
+                                    cloud.signIn(email, password)
+                                }
+                            }
+                        }.onSuccess(onAuthenticated)
+                            .onFailure { error = it.message ?: "ログインできませんでした" }
+                        password = ""
+                        confirmPassword = ""
+                        busy = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (busy) "処理中" else if (authMode == "register") "登録" else "ログイン") }
+        }
+    }
+}
+
+@Composable
+private fun StockAiApp(session: SupabaseSession, onLogout: () -> Unit) {
     var selectedCode by remember { mutableStateOf<String?>(null) }
     var showOperations by remember { mutableStateOf(false) }
     var showWatchlist by remember { mutableStateOf(false) }
     var showScreening by remember { mutableStateOf(false) }
     MaterialTheme {
         if (showScreening) ScreeningScreen(
-            initialSession = callbackSession,
+            initialSession = session,
             onBack = { showScreening = false },
             onSelect = { selectedCode = it; showScreening = false },
         )
@@ -57,14 +187,20 @@ private fun StockAiApp(callbackSession: SupabaseSession?) {
         )
         else if (showOperations) OperationsScreen(onBack = { showOperations = false }, onWatchlist = { showWatchlist = true })
         else if (selectedCode == null) RankingScreen(
-            onSelect = { selectedCode = it }, onOperations = { showOperations = true }, onScreening = { showScreening = true },
+            onSelect = { selectedCode = it }, onOperations = { showOperations = true },
+            onScreening = { showScreening = true }, onLogout = onLogout,
         )
         else StockDetailScreen(code = selectedCode!!, onBack = { selectedCode = null })
     }
 }
 
 @Composable
-private fun RankingScreen(onSelect: (String) -> Unit, onOperations: () -> Unit, onScreening: () -> Unit) {
+private fun RankingScreen(
+    onSelect: (String) -> Unit,
+    onOperations: () -> Unit,
+    onScreening: () -> Unit,
+    onLogout: () -> Unit,
+) {
     var rankings by remember { mutableStateOf<List<Ranking>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableIntStateOf(0) }
@@ -78,6 +214,7 @@ private fun RankingScreen(onSelect: (String) -> Unit, onOperations: () -> Unit, 
             TextButton(onClick = { refreshToken++ }) { Text("更新") }
             TextButton(onClick = onScreening) { Text("条件") }
             TextButton(onClick = onOperations) { Text("運用") }
+            TextButton(onClick = onLogout) { Text("ログアウト") }
         })
     }) { padding ->
         Column(Modifier.padding(padding).padding(16.dp)) {
@@ -104,6 +241,7 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
     var options by remember { mutableStateOf<ScreeningOptions?>(null) }
     var mode by remember { mutableStateOf("auto") }
     var genreId by remember { mutableStateOf<String?>(null) }
+    var holdingDays by remember { mutableStateOf("60") }
     val manualValues = remember { mutableStateMapOf<String, String>() }
     var hits by remember { mutableStateOf<List<ScreeningHit>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -130,18 +268,29 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
 
     fun currentPreference(): CloudPreference {
         val loaded = options
+        val resolvedHoldingDays = holdingDays.toIntOrNull()
+            ?: throw IllegalArgumentException("保有営業日数を入力してください")
+        require(resolvedHoldingDays in 1..250) { "保有営業日数は1～250日で入力してください" }
         val conditions = loaded?.manualFields?.mapNotNull { field ->
             manualValues[field.field]?.toDoubleOrNull()?.let { value ->
                 ManualCondition(field.field, field.defaultOperator, value)
             }
         }.orEmpty()
-        return CloudPreference(mode, genreId, "all", if (mode == "manual") conditions else emptyList())
+        return CloudPreference(
+            mode, genreId, "all",
+            if (mode == "manual") conditions else emptyList(),
+            resolvedHoldingDays,
+        )
     }
 
     fun saveToCloud(session: SupabaseSession) {
         cloudBusy = true
         cloudStatus = null
-        val preference = currentPreference()
+        val preference = runCatching { currentPreference() }.getOrElse {
+            cloudStatus = it.message
+            cloudBusy = false
+            return
+        }
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { cloud.savePreference(session, preference) } }
                 .onSuccess { cloudStatus = "クラウドへ保存しました" }
@@ -176,6 +325,22 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
                 options = loaded
                 genreId = loaded.genres.firstOrNull()?.id
                 error = "スマホ単体モードです。条件の保存は利用できますが、プレビューは配信後に確認してください。"
+            }
+    }
+    LaunchedEffect(initialSession, options) {
+        val session = initialSession ?: return@LaunchedEffect
+        if (options == null) return@LaunchedEffect
+        runCatching { withContext(Dispatchers.IO) { cloud.loadPreference(session) } }
+            .onSuccess { saved ->
+                if (saved != null) {
+                    mode = saved.mode
+                    genreId = saved.genreId
+                    holdingDays = saved.holdingDays.toString()
+                    manualValues.clear()
+                    saved.manualConditions.forEach {
+                        manualValues[it.field] = it.value.toString()
+                    }
+                }
             }
     }
     LaunchedEffect(mode, genreId, refreshToken, options) {
@@ -244,6 +409,16 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
                     FilterChip(selected = mode == "auto", onClick = { mode = "auto" }, label = { Text("オート") })
                     FilterChip(selected = mode == "manual", onClick = { mode = "manual" }, label = { Text("マニュアル") })
                 }
+                OutlinedTextField(
+                    value = holdingDays,
+                    onValueChange = { holdingDays = it.filter(Char::isDigit).take(3) },
+                    label = { Text("期待値の保有営業日数") },
+                    supportingText = {
+                        Text("選定条件が過去に成立した翌営業日から、この日数後までの成績で算出します（1～250日）。")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
                 Spacer(Modifier.height(12.dp))
             }
             if (mode == "auto") {
@@ -308,6 +483,9 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
                         supportingContent = {
                             Column {
                                 Text("${result.profile} / 期待値 $score")
+                                result.holdingDays?.let {
+                                    Text("期待値期間: $it 営業日 / 保存した全条件で検証")
+                                }
                                 result.comment?.let { Text(it) }
                             }
                         },
@@ -391,11 +569,15 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
             confirmButton = {
                 TextButton(
                     enabled = !cloudBusy,
-                    onClick = {
+                    onClick = loginClick@{
                         cloudBusy = true
                         cloudStatus = null
                         loginError = null
-                        val preference = currentPreference()
+                        val preference = runCatching { currentPreference() }.getOrElse {
+                            loginError = it.message
+                            cloudBusy = false
+                            return@loginClick
+                        }
                         val requestedAuthMode = authMode
                         scope.launch {
                             runCatching {
