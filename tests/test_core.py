@@ -120,7 +120,7 @@ class DatabaseTestCase(unittest.TestCase):
         })
         with self.db.connect() as connection:
             status = StockRepository(connection).operations_status()
-        self.assertFalse(status["ready"])
+        self.assertTrue(status["ready"])
         self.assertEqual(status["pool"]["universe_count"], 3800)
         self.assertEqual(status["evening_update"]["details"]["failed_count"], 2)
         self.assertEqual(status["morning_screening"]["details"]["hit_count"], 1)

@@ -30,7 +30,7 @@ def main() -> int:
         database, settings, load_yaml("config/indicators.yaml")
     ).run()
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["failed_count"] == 0 else 1
+    return 0 if result["usable"] else 1
 
 
 if __name__ == "__main__":
