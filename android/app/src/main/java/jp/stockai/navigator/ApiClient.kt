@@ -7,7 +7,18 @@ import java.net.URL
 
 data class Ranking(val code: String, val score: Double?, val grade: String?)
 data class Price(val date: String, val close: Double)
-data class HistoryItem(val date: String, val profile: String, val type: String)
+data class HistoryItem(
+    val date: String,
+    val profile: String,
+    val type: String,
+    val expectationScore: Double?,
+    val grade: String?,
+    val tradeCount: Int?,
+    val winRatePercent: Double?,
+    val averageReturnPercent: Double?,
+    val maxDrawdownPercent: Double?,
+    val comment: String?,
+)
 data class JobRun(val name: String, val status: String, val finishedAt: String)
 data class MarketRegime(val marketCode: String, val date: String, val regime: String)
 data class DailyReport(
@@ -92,7 +103,21 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
     }
     fun history(code: String): List<HistoryItem> = get("/stocks/${code}/history").getJSONArray("history").mapItems { item ->
         val value = item as JSONObject
-        HistoryItem(value.getString("as_of_date"), value.getString("profile_name"), value.getString("analysis_type"))
+        val result = value.optJSONObject("result")
+        val expectation = result?.optJSONObject("expectation")
+        val summary = result?.optJSONObject("summary")
+        HistoryItem(
+            date = value.getString("as_of_date"),
+            profile = value.getString("profile_name"),
+            type = value.getString("analysis_type"),
+            expectationScore = expectation?.optionalDouble("score"),
+            grade = expectation?.optString("grade")?.takeIf { it.isNotEmpty() },
+            tradeCount = summary?.optionalInt("trade_count"),
+            winRatePercent = summary?.optionalDouble("win_rate_percent"),
+            averageReturnPercent = summary?.optionalDouble("average_return_percent"),
+            maxDrawdownPercent = summary?.optionalDouble("max_drawdown_percent"),
+            comment = result?.optString("comment")?.takeIf { it.isNotEmpty() },
+        )
     }
     fun overview(code: String): StockOverview {
         val value = get("/stocks/${code}/overview")
@@ -227,4 +252,10 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
         }
     }
     private fun <T> JSONArray.mapItems(transform: (Any) -> T): List<T> = (0 until length()).map { transform(get(it)) }
+
+    private fun JSONObject.optionalDouble(name: String): Double? =
+        takeIf { has(name) && !isNull(name) }?.getDouble(name)
+
+    private fun JSONObject.optionalInt(name: String): Int? =
+        takeIf { has(name) && !isNull(name) }?.getInt(name)
 }
