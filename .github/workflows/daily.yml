@@ -24,7 +24,6 @@ jobs:
       GITHUB_CHARTS_TOKEN: ${{ github.token }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      STOCKAI_USER_ID: ${{ secrets.STOCKAI_USER_ID }}
       STOCKAI_JOB_LABEL: 朝の候補更新・LINE配信
 
     steps:

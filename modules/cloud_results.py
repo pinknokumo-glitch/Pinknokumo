@@ -13,11 +13,11 @@ class CloudResultPublisher:
         self.url, self.key, self.user_id = url.rstrip("/"), service_role_key, user_id
 
     @classmethod
-    def from_environment(cls) -> "CloudResultPublisher | None":
-        values = [os.getenv(name, "").strip() for name in (
-            "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "STOCKAI_USER_ID",
-        )]
-        return cls(*values) if all(values) else None
+    def from_environment(cls, user_id: str | None = None) -> "CloudResultPublisher | None":
+        url = os.getenv("SUPABASE_URL", "").strip()
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        resolved_user_id = user_id or os.getenv("STOCKAI_USER_ID", "").strip()
+        return cls(url, key, resolved_user_id) if url and key and resolved_user_id else None
 
     def publish(
         self, screening_date: str, profile: str,

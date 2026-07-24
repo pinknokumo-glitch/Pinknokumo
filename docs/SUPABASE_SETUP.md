@@ -14,7 +14,10 @@ This is the planned secure control plane for Android-to-cloud screening settings
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (GitHub Actions only)
-- `STOCKAI_USER_ID`
+
+`STOCKAI_USER_ID` is optional. Leave it unset for normal app operation so the
+daily job automatically uses the preference most recently saved from the app.
+Set it only when intentionally pinning the job to one specific Supabase user.
 
 Android also uses `SUPABASE_URL` and the public `SUPABASE_ANON_KEY`. Put these only in
 `android/local.properties` (which is ignored by Git):
@@ -23,6 +26,16 @@ Android also uses `SUPABASE_URL` and the public `SUPABASE_ANON_KEY`. Put these o
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-public-anon-key
 ```
+
+For Android email confirmation, add this exact URL under
+Authentication > URL Configuration > Redirect URLs:
+
+```text
+stockai://auth/confirm
+```
+
+The confirmation email verifies the user through Supabase and then opens the installed
+Android app. The app imports the returned session without storing the password.
 
 ## 設定が翌日の処理へ反映される流れ
 
@@ -36,9 +49,10 @@ SUPABASE_ANON_KEY=your-public-anon-key
 5. 配信候補は`screening_results`へ保存され、Androidの「最新結果」から
    同じユーザーの最新配信日を確認できます。
 
-GitHub Secretsには`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、
-`STOCKAI_USER_ID`の3つが必要です。`STOCKAI_USER_ID`はSupabase Authで
-作成したAndroidログインユーザーのUUIDと一致させてください。
+GitHub Secretsには`SUPABASE_URL`と`SUPABASE_SERVICE_ROLE_KEY`が必要です。
+朝の処理は、アプリから最後に保存された設定行の`user_id`を自動採用します。
+既存の`STOCKAI_USER_ID`は後方互換用で、設定行をユーザーID指定で固定したい
+場合だけ使用します。
 
 The app does not store the email, password, or session after it closes. The password is
 used only for the sign-in request, and preference writes are restricted by RLS.

@@ -2,6 +2,7 @@
 
 package jp.stockai.navigator
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,20 +24,30 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    private var callbackSession by mutableStateOf<SupabaseSession?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { StockAiApp() }
+        callbackSession = runCatching { SupabaseClient().sessionFromCallback(intent?.data) }.getOrNull()
+        setContent { StockAiApp(callbackSession) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        callbackSession = runCatching { SupabaseClient().sessionFromCallback(intent.data) }.getOrNull()
     }
 }
 
 @Composable
-private fun StockAiApp() {
+private fun StockAiApp(callbackSession: SupabaseSession?) {
     var selectedCode by remember { mutableStateOf<String?>(null) }
     var showOperations by remember { mutableStateOf(false) }
     var showWatchlist by remember { mutableStateOf(false) }
     var showScreening by remember { mutableStateOf(false) }
     MaterialTheme {
         if (showScreening) ScreeningScreen(
+            initialSession = callbackSession,
             onBack = { showScreening = false },
             onSelect = { selectedCode = it; showScreening = false },
         )
@@ -87,7 +98,7 @@ private fun RankingScreen(onSelect: (String) -> Unit, onOperations: () -> Unit, 
 }
 
 @Composable
-private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
+private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit, onSelect: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val cloud = remember { SupabaseClient() }
     var options by remember { mutableStateOf<ScreeningOptions?>(null) }
@@ -96,15 +107,26 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
     val manualValues = remember { mutableStateMapOf<String, String>() }
     var hits by remember { mutableStateOf<List<ScreeningHit>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var localApiAvailable by remember { mutableStateOf(true) }
     var refreshToken by remember { mutableIntStateOf(0) }
-    var cloudSession by remember { mutableStateOf<SupabaseSession?>(null) }
+    var cloudSession by remember { mutableStateOf(initialSession) }
     var cloudResults by remember { mutableStateOf<List<CloudScreeningResult>>(emptyList()) }
     var cloudStatus by remember { mutableStateOf<String?>(null) }
     var showLogin by remember { mutableStateOf(false) }
     var loginPurpose by remember { mutableStateOf("save") }
+    var authMode by remember { mutableStateOf("login") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var loginError by remember { mutableStateOf<String?>(null) }
     var cloudBusy by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialSession) {
+        if (initialSession != null) {
+            cloudSession = initialSession
+            cloudStatus = "メール確認が完了しました。クラウド設定を保存できます。"
+        }
+    }
 
     fun currentPreference(): CloudPreference {
         val loaded = options
@@ -148,11 +170,18 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
     LaunchedEffect(Unit) {
         runCatching { withContext(Dispatchers.IO) { ApiClient().screeningOptions() } }
             .onSuccess { loaded -> options = loaded; genreId = loaded.genres.firstOrNull()?.id }
-            .onFailure { error = it.message }
+            .onFailure {
+                val loaded = builtInScreeningOptions()
+                localApiAvailable = false
+                options = loaded
+                genreId = loaded.genres.firstOrNull()?.id
+                error = "スマホ単体モードです。条件の保存は利用できますが、プレビューは配信後に確認してください。"
+            }
     }
     LaunchedEffect(mode, genreId, refreshToken, options) {
         val loaded = options ?: return@LaunchedEffect
         if (mode == "auto" && genreId == null) return@LaunchedEffect
+        if (!localApiAvailable) return@LaunchedEffect
         error = null
         runCatching {
             withContext(Dispatchers.IO) {
@@ -183,6 +212,7 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                             !cloud.isConfigured -> cloudStatus = "Supabaseの公開設定が未登録です"
                             cloudSession == null -> {
                                 loginPurpose = "results"
+                                loginError = null
                                 showLogin = true
                             }
                             else -> loadCloudResults(cloudSession!!)
@@ -196,6 +226,7 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                             !cloud.isConfigured -> cloudStatus = "Supabaseの公開設定が未登録です"
                             cloudSession == null -> {
                                 loginPurpose = "save"
+                                loginError = null
                                 showLogin = true
                             }
                             else -> saveToCloud(cloudSession!!)
@@ -304,16 +335,40 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
     if (showLogin) {
         AlertDialog(
             onDismissRequest = { if (!cloudBusy) showLogin = false },
-            title = { Text("Supabaseへログイン") },
+            title = { Text(if (authMode == "register") "アカウントを作成" else "Supabaseへログイン") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        FilterChip(
+                            selected = authMode == "login",
+                            onClick = {
+                                authMode = "login"
+                                loginError = null
+                                confirmPassword = ""
+                            },
+                            label = { Text("ログイン") },
+                        )
+                        FilterChip(
+                            selected = authMode == "register",
+                            onClick = {
+                                authMode = "register"
+                                loginError = null
+                            },
+                            label = { Text("新規登録") },
+                        )
+                    }
                     Text(
-                        if (loginPurpose == "results") {
+                        if (authMode == "register") {
+                            "メールとパスワードでアプリ用アカウントを作成します。認証情報は端末に保存しません。"
+                        } else if (loginPurpose == "results") {
                             "認証情報は端末に保存しません。ログイン後、最新の配信結果を読み込みます。"
                         } else {
                             "認証情報は端末に保存しません。ログイン後、現在の条件を保存します。"
                         }
                     )
+                    loginError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
                     OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("メール") }, singleLine = true)
                     OutlinedTextField(
                         value = password,
@@ -322,6 +377,15 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                     )
+                    if (authMode == "register") {
+                        OutlinedTextField(
+                            value = confirmPassword,
+                            onValueChange = { confirmPassword = it },
+                            label = { Text("パスワード（確認）") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -330,11 +394,23 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                     onClick = {
                         cloudBusy = true
                         cloudStatus = null
+                        loginError = null
                         val preference = currentPreference()
+                        val requestedAuthMode = authMode
                         scope.launch {
                             runCatching {
                                 withContext(Dispatchers.IO) {
-                                    val session = cloud.signIn(email, password)
+                                    if (requestedAuthMode == "register" && password != confirmPassword) {
+                                        throw IllegalArgumentException("確認用パスワードが一致しません")
+                                    }
+                                    val session = if (requestedAuthMode == "register") {
+                                        val registration = cloud.signUp(email, password)
+                                        registration.session ?: throw IllegalStateException(
+                                            "登録メールを送信しました。メール確認後にログインしてください。"
+                                        )
+                                    } else {
+                                        cloud.signIn(email, password)
+                                    }
                                     val results = if (loginPurpose == "results") {
                                         cloud.loadLatestResults(session)
                                     } else {
@@ -346,6 +422,7 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                             }.onSuccess { (session, results) ->
                                 cloudSession = session
                                 password = ""
+                                confirmPassword = ""
                                 showLogin = false
                                 if (loginPurpose == "results") {
                                     cloudResults = results
@@ -359,14 +436,30 @@ private fun ScreeningScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
                                 }
                             }.onFailure {
                                 password = ""
-                                cloudStatus = "クラウドエラー: ${it.message ?: "ログインできませんでした"}"
+                                confirmPassword = ""
+                                loginError = it.message ?: "ログインできませんでした"
                             }
                             cloudBusy = false
                         }
                     },
-                ) { Text(if (loginPurpose == "results") "ログインして表示" else "ログインして保存") }
+                ) {
+                    Text(
+                        if (authMode == "register") {
+                            if (loginPurpose == "results") "登録して表示" else "登録して保存"
+                        } else {
+                            if (loginPurpose == "results") "ログインして表示" else "ログインして保存"
+                        }
+                    )
+                }
             },
-            dismissButton = { TextButton(onClick = { showLogin = false; password = "" }) { Text("キャンセル") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    showLogin = false
+                    password = ""
+                    confirmPassword = ""
+                    loginError = null
+                }) { Text("キャンセル") }
+            },
         )
     }
 }

@@ -93,6 +93,7 @@ def main() -> int:
     scoring = load_yaml("config/scoring.yaml")
     notification = load_yaml("config/notification.yaml")
     profile = args.profile or screening["active_profile"]
+    cloud_user_id = None
     if args.profile is None:
         cloud_client = CloudPreferenceClient.from_environment()
         if cloud_client is not None:
@@ -101,7 +102,10 @@ def main() -> int:
                 preference = cloud_client.fetch(options)
                 if preference is not None:
                     screening, profile = apply_preference(preference, options, screening)
+                    cloud_user_id = preference.user_id
                     print(f"Cloud screening preference: {preference.mode} / {profile}")
+                else:
+                    print("Cloud screening preference: no saved preference found")
             except (RuntimeError, ValueError) as error:
                 print(f"Warning: cloud screening preference ignored: {error}")
 
@@ -234,7 +238,7 @@ def main() -> int:
         except Exception as error:
             chart_warning = f"チャート更新失敗: {type(error).__name__}"
             print(f"Warning: {chart_warning}")
-    cloud_publisher = CloudResultPublisher.from_environment()
+    cloud_publisher = CloudResultPublisher.from_environment(cloud_user_id)
     if cloud_publisher is not None and delivery_hits:
         try:
             published_count = cloud_publisher.publish(

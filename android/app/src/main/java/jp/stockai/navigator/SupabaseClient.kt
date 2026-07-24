@@ -1,11 +1,15 @@
 package jp.stockai.navigator
 
+import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.time.Instant
 
 data class SupabaseSession(val accessToken: String, val userId: String, val email: String)
+data class SupabaseRegistration(val session: SupabaseSession?, val confirmationRequired: Boolean)
 
 data class CloudScreeningResult(
     val screeningDate: String,
@@ -40,6 +44,42 @@ class SupabaseClient(
         )
         val user = response.getJSONObject("user")
         return SupabaseSession(response.getString("access_token"), user.getString("id"), user.optString("email", email.trim()))
+    }
+
+    fun signUp(email: String, password: String): SupabaseRegistration {
+        require(isConfigured) { "Supabaseが未設定です" }
+        require(email.isNotBlank()) { "メールを入力してください" }
+        require(password.length >= 8) { "パスワードは8文字以上で入力してください" }
+        val normalizedEmail = email.trim()
+        val redirect = URLEncoder.encode(AUTH_REDIRECT_URL, Charsets.UTF_8.name())
+        val response = request(
+            "POST", "/auth/v1/signup?redirect_to=$redirect",
+            JSONObject().put("email", normalizedEmail).put("password", password),
+        )
+        val accessToken = response.optString("access_token")
+        if (accessToken.isBlank()) return SupabaseRegistration(null, confirmationRequired = true)
+        val user = response.getJSONObject("user")
+        return SupabaseRegistration(
+            SupabaseSession(accessToken, user.getString("id"), user.optString("email", normalizedEmail)),
+            confirmationRequired = false,
+        )
+    }
+
+    fun sessionFromCallback(uri: Uri?): SupabaseSession? {
+        if (uri?.scheme != "stockai" || uri.host != "auth") return null
+        val values = buildMap {
+            uri.fragment.orEmpty().split("&").forEach { item ->
+                val pair = item.split("=", limit = 2)
+                if (pair.size == 2) put(pair[0], Uri.decode(pair[1]))
+            }
+            uri.queryParameterNames.forEach { name ->
+                uri.getQueryParameter(name)?.let { put(name, it) }
+            }
+        }
+        val token = values["access_token"].orEmpty()
+        if (token.isBlank()) return null
+        val user = request("GET", "/auth/v1/user", token = token)
+        return SupabaseSession(token, user.getString("id"), user.optString("email"))
     }
 
     fun loadPreference(session: SupabaseSession): CloudPreference? {
@@ -77,6 +117,7 @@ class SupabaseClient(
             .put("genre_id", preference.genreId ?: JSONObject.NULL)
             .put("manual_logic", preference.manualLogic)
             .put("manual_conditions", conditions)
+            .put("updated_at", Instant.now().toString())
         requestArray(
             "POST", "/rest/v1/screening_preferences?on_conflict=user_id", payload, session.accessToken,
             mapOf("Prefer" to "resolution=merge-duplicates,return=representation"),
@@ -138,13 +179,21 @@ class SupabaseClient(
             val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
                 ?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (code !in 200..299) {
-                val message = runCatching { JSONObject(body).optString("msg").ifBlank { JSONObject(body).optString("message") } }
-                    .getOrNull().orEmpty().ifBlank { "HTTP $code" }
+                val message = runCatching {
+                    val error = JSONObject(body)
+                    sequenceOf("msg", "message", "error_description", "error")
+                        .map { error.optString(it) }
+                        .firstOrNull { it.isNotBlank() }
+                }.getOrNull().orEmpty().ifBlank { "HTTP $code" }
                 error("Supabase: $message")
             }
             body.ifBlank { if (method == "GET" || path.startsWith("/rest/")) "[]" else "{}" }
         } finally {
             connection.disconnect()
         }
+    }
+
+    private companion object {
+        const val AUTH_REDIRECT_URL = "stockai://auth/confirm"
     }
 }
