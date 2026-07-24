@@ -24,6 +24,22 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-public-anon-key
 ```
 
+## 設定が翌日の処理へ反映される流れ
+
+1. Androidの「クラウド保存」で、ログインユーザーの行を
+   `screening_preferences`へ保存します。
+2. 朝のGitHub Actionsは`STOCKAI_USER_ID`の行だけを読み込みます。
+3. オート設定は選択したジャンルのプロファイルへ、マニュアル設定は
+   保存した条件をAND/ORルールへ変換してスクリーニングします。
+4. Actionsログに`Cloud screening preference: <mode> / <profile>`が出れば、
+   クラウド設定がその実行に採用されています。
+5. 配信候補は`screening_results`へ保存され、Androidの「最新結果」から
+   同じユーザーの最新配信日を確認できます。
+
+GitHub Secretsには`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、
+`STOCKAI_USER_ID`の3つが必要です。`STOCKAI_USER_ID`はSupabase Authで
+作成したAndroidログインユーザーのUUIDと一致させてください。
+
 The app does not store the email, password, or session after it closes. The password is
 used only for the sign-in request, and preference writes are restricted by RLS.
 
