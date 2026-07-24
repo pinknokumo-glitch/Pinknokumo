@@ -49,13 +49,21 @@ Android app. The app imports the returned session without storing the password.
 5. 配信候補は`screening_results`へ保存され、Androidの「最新結果」から
    同じユーザーの最新配信日を確認できます。
 
+The daily cloud batch reads every saved preference. Users with identical genre/manual
+conditions and identical `holding_days` share one screening and backtest calculation,
+while results are written separately for each user. The expectation backtest uses the
+same complete technical/fundamental AND/OR rule as screening, enters at the next
+session's open, and exits after the configured number of trading sessions.
+
 GitHub Secretsには`SUPABASE_URL`と`SUPABASE_SERVICE_ROLE_KEY`が必要です。
 朝の処理は、アプリから最後に保存された設定行の`user_id`を自動採用します。
 既存の`STOCKAI_USER_ID`は後方互換用で、設定行をユーザーID指定で固定したい
 場合だけ使用します。
 
-The app does not store the email, password, or session after it closes. The password is
-used only for the sign-in request, and preference writes are restricted by RLS.
+The app never stores the password. It stores the Supabase access and refresh session
+encrypted with a key held by Android Keystore, shows the login screen at startup, and
+allows one-tap reuse of the saved account. Logout deletes the encrypted local session.
+Preference writes remain restricted by RLS.
 
 ## Database preparation
 

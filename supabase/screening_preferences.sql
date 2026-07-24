@@ -4,10 +4,20 @@ create table if not exists public.screening_preferences (
   genre_id text,
   manual_logic text check (manual_logic in ('all', 'any')) default 'all',
   manual_conditions jsonb not null default '[]'::jsonb,
+  holding_days integer not null default 60 check (holding_days between 1 and 250),
   updated_at timestamptz not null default now(),
   constraint auto_requires_genre check (mode <> 'auto' or genre_id is not null),
   constraint manual_condition_limit check (jsonb_array_length(manual_conditions) <= 8)
 );
+
+alter table public.screening_preferences
+add column if not exists holding_days integer not null default 60;
+
+alter table public.screening_preferences
+drop constraint if exists screening_preferences_holding_days_check;
+alter table public.screening_preferences
+add constraint screening_preferences_holding_days_check
+check (holding_days between 1 and 250);
 
 alter table public.screening_preferences enable row level security;
 

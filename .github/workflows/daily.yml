@@ -51,6 +51,9 @@ jobs:
       - name: Update, analyze, publish charts, and notify LINE
         run: python scripts/run_daily_pipeline.py --candidate-pool --skip-backtest --backtest-matches --notify
 
+      - name: Generate app results for all saved user settings
+        run: python scripts/run_cloud_user_screenings.py
+
       - name: Notify LINE when the daily job fails
         if: failure()
         continue-on-error: true

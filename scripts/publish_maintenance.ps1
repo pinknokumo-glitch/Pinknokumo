@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-self-registration",
+    [string]$Branch = "agent/multi-user-screening",
     [switch]$RunWorkflow
 )
 
@@ -31,10 +31,12 @@ $publishFiles = @(
     "android/app/src/main/AndroidManifest.xml",
     "android/app/src/main/java/jp/stockai/navigator/ApiClient.kt",
     "android/app/src/main/java/jp/stockai/navigator/MainActivity.kt",
+    "android/app/src/main/java/jp/stockai/navigator/SessionStore.kt",
     "android/app/src/main/java/jp/stockai/navigator/SupabaseClient.kt",
     "config/settings.yaml",
     "docs/SUPABASE_SETUP.md",
     "modules/batch_backtest.py",
+    "modules/cloud_batch.py",
     "modules/cloud_preferences.py",
     "modules/data_loader.py",
     "modules/morning_candidates.py",
@@ -42,11 +44,14 @@ $publishFiles = @(
     "modules/screener.py",
     "requirements.txt",
     "scripts/run_daily_pipeline.py",
+    "scripts/run_cloud_user_screenings.py",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
+    "tests/test_cloud_batch.py",
     "tests/test_cloud_preferences.py",
     "supabase/screening_preferences.sql",
     "supabase/screening_results.sql",
+    "supabase/multi_user_upgrade.sql",
     "tests/test_cloud_results.py",
     "tests/test_data_loader.py"
 )
@@ -54,7 +59,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add Android self registration"
+    & $git commit -m "Add multi-user cloud screening"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -90,8 +95,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add Android self registration" `
-    --body "Adds in-app email and password registration with immediate authenticated preference saving. Bundles screening options for physical phones and automatically selects the user who most recently saved cloud settings, removing the normal need to maintain STOCKAI_USER_ID.").Trim()
+    --title "Add multi-user cloud screening" `
+    --body "Adds secure reusable Android sessions, configurable expectation holding periods, and per-user cloud screening. Identical technical and fundamental rules are grouped so their full-condition backtests are computed once and published separately under RLS.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

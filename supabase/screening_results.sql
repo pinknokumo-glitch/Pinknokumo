@@ -9,9 +9,16 @@ create table if not exists public.screening_results (
   reason text,
   comment text,
   chart_url text,
+  holding_days integer check (holding_days between 1 and 250),
+  condition_summary text,
   updated_at timestamptz not null default now(),
   primary key (user_id, screening_date, profile_name, code)
 );
+
+alter table public.screening_results
+add column if not exists holding_days integer;
+alter table public.screening_results
+add column if not exists condition_summary text;
 
 create index if not exists screening_results_user_date_idx
 on public.screening_results (user_id, screening_date desc, position);
