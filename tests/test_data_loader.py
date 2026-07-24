@@ -13,10 +13,17 @@ from modules.database import Database
 
 
 SETTINGS = {
-    "providers": {"yfinance": {
-        "period": "1y", "interval": "1d", "auto_adjust": False, "repair": False,
-        "retries": 2, "retry_delay_seconds": 0,
-    }},
+    "providers": {
+        "yfinance": {
+            "period": "1y", "interval": "1d", "auto_adjust": False, "repair": False,
+            "retries": 2, "retry_delay_seconds": 0,
+        },
+        "jquants": {
+            "api_key_env": "JQUANTS_API_KEY",
+            "retries": 3,
+            "retry_delay_seconds": 0,
+        },
+    },
     "resampling": {"weekly_rule": "W-FRI", "monthly_rule": "ME"},
 }
 
@@ -112,6 +119,29 @@ class DataLoaderTestCase(unittest.TestCase):
             "CurFYEn": pd.Timestamp("2025-12-31"), "Sales": 1000,
         }])
         self.assertEqual(saved, 1)
+
+    def test_recent_financial_cache_prevents_redundant_request(self) -> None:
+        self.loader._save_financial([{
+            "Code": "72030", "DiscDate": "2026-01-05", "DocType": "FY",
+        }])
+        self.assertTrue(self.loader.financial_is_fresh("72030", 72))
+        self.assertFalse(self.loader.financial_is_fresh("72030", 0))
+        self.assertFalse(self.loader.financial_is_fresh("67580", 72))
+
+    def test_jquants_financial_retries_transient_failures(self) -> None:
+        response = [{
+            "Code": "72030", "DiscDate": "2026-01-05", "DocType": "FY",
+        }]
+        client = unittest.mock.MagicMock()
+        client.get_fin_summary.side_effect = [
+            RuntimeError("429"),
+            RuntimeError("429"),
+            response,
+        ]
+        with patch.object(self.loader, "_jquants_client", return_value=client):
+            saved = self.loader.load_jquants_financial("72030")
+        self.assertEqual(saved, 1)
+        self.assertEqual(client.get_fin_summary.call_count, 3)
 
 
 if __name__ == "__main__":

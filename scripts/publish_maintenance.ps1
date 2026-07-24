@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/candidate-backtest-notifications",
+    [string]$Branch = "agent/jquants-rate-limit-protection",
     [switch]$RunWorkflow
 )
 
@@ -28,16 +28,20 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $publishFiles = @(
     ".github/workflows/daily.yml",
+    "config/settings.yaml",
     "modules/batch_backtest.py",
+    "modules/data_loader.py",
+    "modules/morning_candidates.py",
     "scripts/run_daily_pipeline.py",
     "scripts/publish_maintenance.ps1",
-    "tests/test_batch_backtest.py"
+    "tests/test_batch_backtest.py",
+    "tests/test_data_loader.py"
 )
 & $git add -- $publishFiles
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add candidate backtesting to LINE notifications"
+    & $git commit -m "Reduce J-Quants rate-limit failures"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -73,8 +77,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add candidate backtesting to LINE notifications" `
-    --body "Backtests only stocks that match the effective screening stage, including automatically relaxed rules. The refreshed expectation scores and historical statistics are then used to rerank candidates and populate each LINE commentary without backtesting the full market every morning.").Trim()
+    --title "Reduce J-Quants rate-limit failures" `
+    --body "Reuses recently refreshed financial disclosures, spaces required J-Quants requests, and retries transient failures with exponential backoff. This reduces HTTP 429 responses while preserving stored fundamentals for screening, backtesting, and LINE commentary.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
