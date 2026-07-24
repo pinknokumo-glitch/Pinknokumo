@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-backtest-details",
+    [string]$Branch = "agent/android-cloud-results",
     [switch]$RunWorkflow
 )
 
@@ -49,7 +49,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Show backtest details in Android"
+    & $git commit -m "Show cloud screening results in Android"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -85,8 +85,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Show backtest details in Android" `
-    --body "Displays each stored expectation score, grade, trade count, win rate, average return, maximum drawdown, and factual backtest comment on the Android stock detail screen. Also keeps the pandas runtime compatibility cleanup prepared in the same maintenance update.").Trim()
+    --title "Show cloud screening results in Android" `
+    --body "Adds a secure latest-results action to the Android screening screen. After Supabase login, the app shows the newest delivery date, ranked candidates, expectation scores, and comments while keeping credentials only in memory.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
