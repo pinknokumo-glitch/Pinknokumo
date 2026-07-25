@@ -11,8 +11,10 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -78,7 +80,7 @@ class StockNotificationWorker(
                     result.companyName?.let { "${result.code} $it" } ?: result.code
                 }
             }
-            showNotification(
+            val notified = showNotification(
                 title = if (isTest) {
                     "テスト通知：${run.screeningDate} の配信結果"
                 } else {
@@ -86,6 +88,16 @@ class StockNotificationWorker(
                 },
                 body = body,
             )
+            if (!notified) {
+                preferences.edit()
+                    .putString(NotificationScheduler.KEY_LAST_STATUS, "通知権限がありません")
+                    .putString(
+                        NotificationScheduler.KEY_LAST_RUN_AT,
+                        java.time.Instant.now().toString(),
+                    )
+                    .apply()
+                return Result.success()
+            }
             preferences.edit()
                 .putString(NotificationScheduler.KEY_LAST_STATUS, "成功")
                 .putString(NotificationScheduler.KEY_LAST_RUN_AT, java.time.Instant.now().toString())
@@ -130,11 +142,11 @@ class StockNotificationWorker(
         }
     }
 
-    private fun showNotification(title: String, body: String) {
+    private fun showNotification(title: String, body: String): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             applicationContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
-        ) return
+        ) return false
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(
@@ -163,6 +175,7 @@ class StockNotificationWorker(
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+        return true
     }
 
     companion object {
@@ -197,6 +210,7 @@ object NotificationScheduler {
         val delay = Duration.between(now, next).toMillis().coerceAtLeast(1_000L)
         val request = PeriodicWorkRequestBuilder<StockNotificationWorker>(24, TimeUnit.HOURS)
             .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+            .setConstraints(networkConstraints())
             .addTag(WORK_NAME)
             .build()
         val workManager = WorkManager.getInstance(context)
@@ -211,6 +225,7 @@ object NotificationScheduler {
     fun runTest(context: Context) {
         val request = OneTimeWorkRequestBuilder<StockNotificationWorker>()
             .setInputData(workDataOf("test_notification" to true))
+            .setConstraints(networkConstraints())
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             TEST_WORK_NAME,
@@ -222,6 +237,7 @@ object NotificationScheduler {
     fun scheduleFreshnessRetry(context: Context, retryNumber: Int) {
         val request = OneTimeWorkRequestBuilder<StockNotificationWorker>()
             .setInitialDelay(10, TimeUnit.MINUTES)
+            .setConstraints(networkConstraints())
             .setInputData(
                 workDataOf(StockNotificationWorker.KEY_FRESHNESS_RETRY to retryNumber)
             )
@@ -232,6 +248,11 @@ object NotificationScheduler {
             request,
         )
     }
+
+    private fun networkConstraints(): Constraints =
+        Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
 
     fun showImmediateTest(context: Context) {
         if (Build.VERSION.SDK_INT >= 33 &&

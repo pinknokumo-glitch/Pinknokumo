@@ -689,7 +689,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.12.3",
+        "バージョン" to "StockAI Navigator 0.12.4",
+        "0.12.4" to "通知権限がない状態を成功扱いしないよう修正し、クラウド通知処理をネットワーク接続時だけ実行。",
         "0.12.3" to "登録確認メール送信を成功表示に変更し、保存済みログインから別アカウントへ切り替える操作を追加。",
         "0.12.2" to "ログイン画面のスクロール、キーボード収納、パスワード表示切替、登録前のプライバシー・免責確認を追加。",
         "0.12.1" to "当日結果の完成待ち、10分間隔の自動再確認、前回結果の誤通知防止を追加。",
