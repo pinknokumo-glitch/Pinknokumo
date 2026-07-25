@@ -24,8 +24,8 @@ android {
         applicationId = "jp.stockai.navigator"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.12.0"
+        versionCode = 17
+        versionName = "0.12.1"
         buildConfigField("String", "SUPABASE_URL", buildConfigString("SUPABASE_URL"))
         buildConfigField("String", "SUPABASE_ANON_KEY", buildConfigString("SUPABASE_ANON_KEY"))
     }

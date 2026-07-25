@@ -20,6 +20,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.time.DayOfWeek
 import java.time.Duration
+import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 
@@ -28,7 +29,7 @@ class StockNotificationWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val now = ZonedDateTime.now()
+        val now = ZonedDateTime.now(JAPAN_ZONE)
         val isTest = inputData.getBoolean(KEY_TEST, false)
         if (!isTest && now.dayOfWeek in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)) {
             return Result.success()
@@ -41,17 +42,36 @@ class StockNotificationWorker(
                 session = cloud.refreshSession(session)
                 store.save(session)
             }
-            val run = cloud.loadLatestRun(session) ?: return Result.success()
             val preferences = applicationContext.getSharedPreferences(
                 NotificationScheduler.PREFERENCES_NAME,
                 Context.MODE_PRIVATE,
             )
-            if (!isTest && preferences.getString(NotificationScheduler.KEY_LAST_DATE, null) == run.screeningDate) {
+            val run = cloud.loadLatestRun(session)
+            if (run == null) {
+                if (!isTest) {
+                    waitForFreshResult(preferences, "当日結果を準備中")
+                }
+                return Result.success()
+            }
+            val runUpdatedDate = run.updatedAt.atZone(JAPAN_ZONE).toLocalDate()
+            if (!isTest && runUpdatedDate != now.toLocalDate()) {
+                waitForFreshResult(preferences, "当日結果を準備中")
+                return Result.success()
+            }
+            if (!isTest &&
+                preferences.getString(NotificationScheduler.KEY_LAST_RUN_UPDATED_AT, null) ==
+                run.updatedAt.toString()
+            ) {
                 return Result.success()
             }
             val limit = preferences.getInt(NotificationScheduler.KEY_COUNT, 10).coerceIn(1, 30)
             val results = cloud.loadLatestResults(session, limit)
-            val body = if (results.isEmpty()) {
+                .filter { it.screeningDate == run.screeningDate }
+            if (!isTest && run.hitCount > 0 && results.isEmpty()) {
+                waitForFreshResult(preferences, "配信結果を反映中")
+                return Result.success()
+            }
+            val body = if (run.hitCount == 0 || results.isEmpty()) {
                 "条件一致は0件でした。アプリで判定内容を確認できます。"
             } else {
                 results.joinToString("、") { result ->
@@ -70,7 +90,13 @@ class StockNotificationWorker(
                 .putString(NotificationScheduler.KEY_LAST_STATUS, "成功")
                 .putString(NotificationScheduler.KEY_LAST_RUN_AT, java.time.Instant.now().toString())
                 .apply {
-                    if (!isTest) putString(NotificationScheduler.KEY_LAST_DATE, run.screeningDate)
+                    if (!isTest) {
+                        putString(NotificationScheduler.KEY_LAST_DATE, run.screeningDate)
+                        putString(
+                            NotificationScheduler.KEY_LAST_RUN_UPDATED_AT,
+                            run.updatedAt.toString(),
+                        )
+                    }
                 }
                 .apply()
             Result.success()
@@ -83,6 +109,24 @@ class StockNotificationWorker(
                 .putString(NotificationScheduler.KEY_LAST_RUN_AT, java.time.Instant.now().toString())
                 .apply()
             if (runAttemptCount < 3) Result.retry() else Result.failure()
+        }
+    }
+
+    private fun waitForFreshResult(
+        preferences: android.content.SharedPreferences,
+        status: String,
+    ) {
+        preferences.edit()
+            .putString(NotificationScheduler.KEY_LAST_STATUS, status)
+            .putString(NotificationScheduler.KEY_LAST_RUN_AT, java.time.Instant.now().toString())
+            .apply()
+        val retryNumber = inputData.getInt(KEY_FRESHNESS_RETRY, 0)
+        if (retryNumber < MAX_FRESHNESS_RETRIES) {
+            NotificationScheduler.scheduleFreshnessRetry(applicationContext, retryNumber + 1)
+        } else {
+            preferences.edit()
+                .putString(NotificationScheduler.KEY_LAST_STATUS, "当日結果を取得できませんでした")
+                .apply()
         }
     }
 
@@ -121,10 +165,13 @@ class StockNotificationWorker(
         NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
     }
 
-    private companion object {
-        const val CHANNEL_ID = "stockai_results"
-        const val NOTIFICATION_ID = 1001
-        const val KEY_TEST = "test_notification"
+    companion object {
+        private const val CHANNEL_ID = "stockai_results"
+        private const val NOTIFICATION_ID = 1001
+        private const val KEY_TEST = "test_notification"
+        internal const val KEY_FRESHNESS_RETRY = "freshness_retry"
+        private const val MAX_FRESHNESS_RETRIES = 12
+        private val JAPAN_ZONE: ZoneId = ZoneId.of("Asia/Tokyo")
     }
 }
 
@@ -133,10 +180,12 @@ object NotificationScheduler {
     const val KEY_TIME = "time"
     const val KEY_COUNT = "count"
     const val KEY_LAST_DATE = "last_notified_screening_date"
+    const val KEY_LAST_RUN_UPDATED_AT = "last_notified_run_updated_at"
     const val KEY_LAST_STATUS = "last_notification_status"
     const val KEY_LAST_RUN_AT = "last_notification_run_at"
     private const val WORK_NAME = "stockai_daily_app_notification"
     private const val TEST_WORK_NAME = "stockai_test_app_notification"
+    private const val FRESHNESS_WORK_NAME = "stockai_fresh_result_retry"
 
     fun schedule(context: Context, time: String) {
         val parts = time.split(":")
@@ -150,7 +199,9 @@ object NotificationScheduler {
             .setInitialDelay(delay, TimeUnit.MILLISECONDS)
             .addTag(WORK_NAME)
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        val workManager = WorkManager.getInstance(context)
+        workManager.cancelUniqueWork(FRESHNESS_WORK_NAME)
+        workManager.enqueueUniquePeriodicWork(
             WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
@@ -164,6 +215,20 @@ object NotificationScheduler {
         WorkManager.getInstance(context).enqueueUniqueWork(
             TEST_WORK_NAME,
             ExistingWorkPolicy.REPLACE,
+            request,
+        )
+    }
+
+    fun scheduleFreshnessRetry(context: Context, retryNumber: Int) {
+        val request = OneTimeWorkRequestBuilder<StockNotificationWorker>()
+            .setInitialDelay(10, TimeUnit.MINUTES)
+            .setInputData(
+                workDataOf(StockNotificationWorker.KEY_FRESHNESS_RETRY to retryNumber)
+            )
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            FRESHNESS_WORK_NAME,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request,
         )
     }

@@ -38,6 +38,7 @@ data class CloudScreeningRun(
     val holdingDays: Int,
     val hitCount: Int,
     val conditionSummary: String?,
+    val updatedAt: Instant,
 )
 data class RequestedBacktest(
     val code: String,
@@ -230,7 +231,8 @@ class SupabaseClient(
         val response = requestArray(
             "GET",
             "/rest/v1/screening_runs?user_id=eq.${session.userId}" +
-                "&select=screening_date,profile_name,holding_days,hit_count,condition_summary&limit=1",
+                "&select=screening_date,profile_name,holding_days,hit_count,condition_summary,updated_at" +
+                "&order=updated_at.desc&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
@@ -241,6 +243,7 @@ class SupabaseClient(
             holdingDays = row.getInt("holding_days"),
             hitCount = row.getInt("hit_count"),
             conditionSummary = row.optString("condition_summary").takeIf { it.isNotEmpty() },
+            updatedAt = Instant.parse(row.getString("updated_at")),
         )
     }
 

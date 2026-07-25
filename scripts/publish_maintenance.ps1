@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-v012-notifications",
+    [string]$Branch = "agent/android-v0121-fresh-notifications",
     [switch]$RunWorkflow
 )
 
@@ -74,7 +74,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add StockAI Android dashboard and app notifications"
+    & $git commit -m "Wait for fresh app notification results"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -110,8 +110,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add Android dashboard, multi-user screening, and app notifications" `
-    --body "Adds the dark Particle Stream Android dashboard, nested sort and expectation settings, requested-stock backtests, multi-user cloud screening, candidate status views, and scheduled Android notifications. LINE delivery is disabled.").Trim()
+    --title "Wait for fresh results before Android notifications" `
+    --body "Updates Android notifications to wait for the current day's completed cloud run, retry every 10 minutes while results are processing, and prevent old stock results from being sent after a zero-hit run. LINE delivery remains disabled.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
