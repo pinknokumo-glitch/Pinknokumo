@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
         launchPage = intent?.getStringExtra(EXTRA_START_PAGE)
             ?.takeIf { it in VALID_START_PAGES } ?: "home"
         sessionStore = SessionStore(applicationContext)
+        NotificationScheduler.rescheduleSaved(applicationContext)
         callbackSession = runCatching { SupabaseClient().sessionFromCallback(intent?.data) }.getOrNull()
         callbackSession?.let(sessionStore::save)
         setContent {
@@ -689,7 +690,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.12.4",
+        "バージョン" to "StockAI Navigator 0.12.5",
+        "0.12.5" to "保存済み通知設定をアプリ起動時に自動再予約し、更新後の手動再保存を不要化。",
         "0.12.4" to "通知権限がない状態を成功扱いしないよう修正し、クラウド通知処理をネットワーク接続時だけ実行。",
         "0.12.3" to "登録確認メール送信を成功表示に変更し、保存済みログインから別アカウントへ切り替える操作を追加。",
         "0.12.2" to "ログイン画面のスクロール、キーボード収納、パスワード表示切替、登録前のプライバシー・免責確認を追加。",
