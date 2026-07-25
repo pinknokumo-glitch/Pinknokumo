@@ -1,0 +1,81 @@
+name: Build signed StockAI Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stockai-android-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ORG_GRADLE_PROJECT_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      ORG_GRADLE_PROJECT_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Verify required build secrets
+        shell: bash
+        run: |
+          required=(
+            ORG_GRADLE_PROJECT_SUPABASE_URL
+            ORG_GRADLE_PROJECT_SUPABASE_ANON_KEY
+            ANDROID_KEYSTORE_BASE64
+            ANDROID_KEYSTORE_PASSWORD
+            ANDROID_KEY_ALIAS
+            ANDROID_KEY_PASSWORD
+          )
+          for name in "${required[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required GitHub Secret is missing: $name"
+              exit 1
+            fi
+          done
+
+      - name: Restore signing key
+        shell: bash
+        run: |
+          key_path="$RUNNER_TEMP/stockai-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$key_path"
+          chmod 600 "$key_path"
+          echo "ANDROID_KEYSTORE_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Prepare downloadable APK
+        shell: bash
+        run: |
+          version="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)"
+          test -n "$version"
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk \
+            "dist/StockAI-Navigator-${version}.apk"
+          sha256sum "dist/StockAI-Navigator-${version}.apk" \
+            > "dist/StockAI-Navigator-${version}.apk.sha256"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: StockAI-Navigator-Android
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
