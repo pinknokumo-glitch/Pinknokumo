@@ -33,8 +33,8 @@ class ScreeningOptions:
     def manual_rule(self, conditions: Sequence[Mapping[str, object]], logic: str = "all") -> dict[str, object]:
         if logic not in {"all", "any"}:
             raise ValueError("logic must be all or any")
-        if not conditions or len(conditions) > 8:
-            raise ValueError("manual conditions must contain 1 to 8 items")
+        if not conditions or len(conditions) > 32:
+            raise ValueError("manual conditions must contain 1 to 32 items")
         allowed = {str(item["field"]): item for item in self.options["manual_fields"]}
         rules = []
         for condition in conditions:

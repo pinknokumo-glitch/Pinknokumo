@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/multi-user-failure-isolation",
+    [string]$Branch = "agent/android-v012-notifications",
     [switch]$RunWorkflow
 )
 
@@ -27,30 +27,45 @@ $env:PYTHONWARNINGS = "ignore::DeprecationWarning"
 if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $publishFiles = @(
+    ".gitignore",
     ".github/workflows/daily.yml",
+    ".github/workflows/evening.yml",
     "android/app/src/main/AndroidManifest.xml",
+    "android/app/build.gradle.kts",
     "android/app/src/main/java/jp/stockai/navigator/ApiClient.kt",
     "android/app/src/main/java/jp/stockai/navigator/MainActivity.kt",
     "android/app/src/main/java/jp/stockai/navigator/SessionStore.kt",
+    "android/app/src/main/java/jp/stockai/navigator/StockNotificationWorker.kt",
     "android/app/src/main/java/jp/stockai/navigator/SupabaseClient.kt",
+    "api.py",
     "config/settings.yaml",
+    "config/screening_options.yaml",
     "docs/SUPABASE_SETUP.md",
     "modules/batch_backtest.py",
     "modules/cloud_batch.py",
+    "modules/cloud_candidates.py",
     "modules/cloud_preferences.py",
     "modules/data_loader.py",
     "modules/morning_candidates.py",
     "modules/cloud_results.py",
     "modules/screener.py",
+    "modules/screening_options.py",
+    "modules/technical.py",
     "requirements.txt",
     "scripts/run_daily_pipeline.py",
+    "scripts/run_evening_universe.py",
     "scripts/run_cloud_user_screenings.py",
+    "scripts/run_backtest_requests.py",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
+    "tests/test_api.py",
     "tests/test_cloud_batch.py",
     "tests/test_cloud_preferences.py",
     "supabase/screening_preferences.sql",
     "supabase/screening_results.sql",
+    "supabase/screening_candidates.sql",
+    "supabase/backtest_requests.sql",
+    "supabase/ui_v03_upgrade.sql",
     "supabase/multi_user_upgrade.sql",
     "tests/test_cloud_results.py",
     "tests/test_data_loader.py"
@@ -59,7 +74,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Isolate multi-user screening failures"
+    & $git commit -m "Add StockAI Android dashboard and app notifications"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -95,8 +110,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Isolate multi-user screening failures" `
-    --body "Continues processing healthy users when one saved preference, calculation group, or result write fails. Records partial-failure counts for Actions diagnostics and still returns failure after all unaffected users are served.").Trim()
+    --title "Add Android dashboard, multi-user screening, and app notifications" `
+    --body "Adds the dark Particle Stream Android dashboard, nested sort and expectation settings, requested-stock backtests, multi-user cloud screening, candidate status views, and scheduled Android notifications. LINE delivery is disabled.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
@@ -111,8 +126,8 @@ if ($RunWorkflow) {
     $runId = (& $gh run list --repo $Repository --workflow daily.yml --limit 1 --json databaseId --jq '.[0].databaseId').Trim()
     Write-Output "Started daily workflow run: $runId"
     Write-Output "Monitor with: gh run watch $runId --repo $Repository"
-    Write-Output "The morning candidate backtest and LINE workflow was started."
+    Write-Output "The morning candidate backtest and app-result workflow was started."
 }
 else {
-    Write-Output "Workflow was not started; no LINE notification was requested."
+    Write-Output "Workflow was not started."
 }

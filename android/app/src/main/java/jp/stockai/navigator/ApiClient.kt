@@ -6,6 +6,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 data class Ranking(val code: String, val score: Double?, val grade: String?)
+data class CandidatePool(
+    val poolDate: String?,
+    val codes: List<String>,
+    val updatedAt: String? = null,
+)
 data class Price(val date: String, val close: Double)
 data class HistoryItem(
     val date: String,
@@ -57,7 +62,14 @@ data class PortfolioSummary(val totalMarketValue: Double, val positions: List<Ho
 data class WatchlistItem(val code: String, val note: String?, val companyName: String?)
 data class ScreeningHit(val code: String, val score: Double?, val reason: String)
 data class ScreeningGenre(val id: String, val label: String, val description: String, val profile: String, val evidenceStatus: String)
-data class ManualField(val field: String, val label: String, val min: Double, val max: Double, val defaultOperator: String)
+data class ManualField(
+    val field: String,
+    val label: String,
+    val min: Double,
+    val max: Double,
+    val defaultOperator: String,
+    val category: String = "technical",
+)
 data class ScreeningOptions(val genres: List<ScreeningGenre>, val manualFields: List<ManualField>)
 data class ManualCondition(val field: String, val operator: String, val value: Double)
 data class StockOverview(
@@ -76,16 +88,45 @@ fun builtInScreeningOptions(): ScreeningOptions = ScreeningOptions(
         ScreeningGenre("rebound", "反発候補", "RSIの改善を重視します。", "rsi_rebound", "baseline"),
         ScreeningGenre("adjustment", "調整局面", "日・週・月のRSIが低い銘柄を探します。", "oversold", "needs_validation"),
     ),
-    manualFields = listOf(
+    manualFields = buildList {
+        addAll(listOf(
         ManualField("daily.rsi_14", "日足RSI", 0.0, 100.0, "<="),
         ManualField("weekly.rsi_14", "週足RSI", 0.0, 100.0, "<="),
         ManualField("monthly.rsi_14", "月足RSI", 0.0, 100.0, "<="),
-        ManualField("fundamental.per", "PER", 0.0, 200.0, "<="),
-        ManualField("fundamental.pbr", "PBR", 0.0, 20.0, "<="),
-        ManualField("fundamental.roe", "ROE", -100.0, 200.0, ">="),
-        ManualField("fundamental.equity_ratio", "自己資本比率", 0.0, 100.0, ">="),
-        ManualField("fundamental.dividend_yield", "配当利回り", 0.0, 30.0, ">="),
-    ),
+        ManualField("daily.macd", "日足MACD", -100000.0, 100000.0, ">="),
+        ManualField("daily.macd_histogram", "MACDヒストグラム", -100000.0, 100000.0, ">="),
+        ManualField("daily.stoch_k", "ストキャスティクス%K", 0.0, 100.0, "<="),
+        ManualField("daily.adx_14", "日足ADX", 0.0, 100.0, ">="),
+        ManualField("daily.bb_percent_b", "ボリンジャー%B", -100.0, 200.0, "<="),
+        ManualField("daily.atr_14_percent", "ATR比率", 0.0, 100.0, "<="),
+        ManualField("daily.price_vs_sma_25_percent", "25日移動平均乖離率", -100.0, 500.0, ">="),
+        ManualField("daily.price_vs_sma_75_percent", "75日移動平均乖離率", -100.0, 500.0, ">="),
+        ManualField("daily.return_20_percent", "20日騰落率", -100.0, 500.0, ">="),
+        ManualField("daily.volume_ratio_20", "20日平均出来高比", 0.0, 10000.0, ">="),
+        ManualField("fundamental.per", "PER", -1000.0, 2000.0, "<=", "fundamental"),
+        ManualField("fundamental.pbr", "PBR", -100.0, 200.0, "<=", "fundamental"),
+        ManualField("fundamental.roe", "ROE", -1000.0, 1000.0, ">=", "fundamental"),
+        ManualField("fundamental.roa", "ROA", -1000.0, 1000.0, ">=", "fundamental"),
+        ManualField("fundamental.operating_margin", "営業利益率", -1000.0, 1000.0, ">=", "fundamental"),
+        ManualField("fundamental.equity_ratio", "自己資本比率", -100.0, 100.0, ">=", "fundamental"),
+        ManualField("fundamental.dividend_yield", "配当利回り", 0.0, 100.0, ">=", "fundamental"),
+        ManualField("fundamental.operating_cash_flow", "営業CF", -1e14, 1e14, ">=", "fundamental"),
+        ))
+        for ((prefix, label) in listOf("weekly" to "週足", "monthly" to "月足")) {
+            add(ManualField("$prefix.macd", "${label}MACD", -100000.0, 100000.0, ">="))
+            add(ManualField("$prefix.macd_histogram", "${label}MACDヒストグラム", -100000.0, 100000.0, ">="))
+            add(ManualField("$prefix.stoch_k", "${label}ストキャスティクス%K", 0.0, 100.0, "<="))
+            add(ManualField("$prefix.stoch_d", "${label}ストキャスティクス%D", 0.0, 100.0, "<="))
+            add(ManualField("$prefix.adx_14", "${label}ADX", 0.0, 100.0, ">="))
+            add(ManualField("$prefix.bb_percent_b", "${label}ボリンジャー%B", -100.0, 200.0, "<="))
+            add(ManualField("$prefix.atr_14_percent", "${label}ATR比率", 0.0, 100.0, "<="))
+            add(ManualField("$prefix.price_vs_sma_25_percent", "${label}25本移動平均乖離率", -100.0, 500.0, ">="))
+            add(ManualField("$prefix.price_vs_sma_75_percent", "${label}75本移動平均乖離率", -100.0, 500.0, ">="))
+            add(ManualField("$prefix.return_20_percent", "${label}20本騰落率", -100.0, 10000.0, ">="))
+            add(ManualField("$prefix.return_60_percent", "${label}60本騰落率", -100.0, 100000.0, ">="))
+            add(ManualField("$prefix.volume_ratio_20", "${label}20本平均出来高比", 0.0, 10000.0, ">="))
+        }
+    },
 )
 
 class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
@@ -223,6 +264,13 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
             relaxationLabel = screening.optionalText("relaxation_label"),
         )
     }
+    fun latestCandidates(): CandidatePool {
+        val value = get("/candidates/latest")
+        return CandidatePool(
+            poolDate = value.optString("pool_date").takeIf { it.isNotEmpty() },
+            codes = value.getJSONArray("candidates").mapItems { it.toString() },
+        )
+    }
     fun watchlist(): List<WatchlistItem> = get("/watchlist").getJSONArray("watchlist").mapItems { item ->
         val value = item as JSONObject
         WatchlistItem(
@@ -252,7 +300,7 @@ class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
             val field = item as JSONObject
             ManualField(
                 field.getString("field"), field.getString("label"), field.getDouble("min"), field.getDouble("max"),
-                field.getString("default_operator"),
+                field.getString("default_operator"), field.optString("category", "technical"),
             )
         }
         return ScreeningOptions(genres, fields)

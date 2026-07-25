@@ -48,6 +48,10 @@ def main() -> int:
         # Use the full Prime/Standard/Growth universe refreshed by the evening job.
         # The RSI-only morning prefilter would incorrectly exclude value/dividend users.
         candidate_codes=None,
+        max_groups=int(settings.get("cloud_screening", {}).get("max_groups", 50)),
+        max_hits_per_group=int(
+            settings.get("cloud_screening", {}).get("max_hits_per_group", 100)
+        ),
     )
     result["invalid_preference_count"] = len(client.validation_errors)
     result["invalid_preferences"] = client.validation_errors

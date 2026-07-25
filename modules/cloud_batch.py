@@ -3,12 +3,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
 from modules.ai_comment import AnalysisCommentary
 from modules.batch_backtest import BatchBacktester
-from modules.cloud_preferences import ScreeningPreference, apply_preference
+from modules.cloud_preferences import (
+    ScreeningPreference,
+    apply_expectation_preference,
+    apply_preference,
+)
 from modules.cloud_results import CloudResultPublisher
 from modules.database import Database
 from modules.repository import StockRepository
@@ -25,6 +30,10 @@ def preference_signature(preference: ScreeningPreference) -> str:
         "manual_logic": preference.manual_logic,
         "manual_conditions": preference.manual_conditions,
         "holding_days": preference.holding_days,
+        "expectation_mode": preference.expectation_mode,
+        "expectation_genre_id": preference.expectation_genre_id,
+        "expectation_manual_logic": preference.expectation_manual_logic,
+        "expectation_manual_conditions": preference.expectation_manual_conditions,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:12]
@@ -51,7 +60,10 @@ def run_cloud_batch(
     supabase_url: str,
     service_role_key: str,
     candidate_codes: list[str] | None = None,
+    max_groups: int = 50,
+    max_hits_per_group: int = 100,
 ) -> dict[str, object]:
+    started_at = time.monotonic()
     groups = group_preferences(preferences)
     published_users = 0
     processed_groups: list[dict[str, object]] = []
@@ -70,12 +82,22 @@ def run_cloud_batch(
             )
         }
     rule_engine = RuleEngine()
-    for signature, members in groups.items():
+    queued_groups = list(groups.items())
+    overflow_groups = queued_groups[max_groups:]
+    queued_groups = queued_groups[:max_groups]
+    for signature, members in overflow_groups:
+        failed_groups.append({
+            "signature": signature,
+            "user_count": len(members),
+            "error": f"SafetyLimit: maximum {max_groups} unique configurations per run",
+        })
+    for signature, members in queued_groups:
         try:
             outcome = _compute_group(
                 database, signature, members[0], options, screening_config,
                 indicator_config, backtest_config, scoring_config,
                 snapshots, company_names, rule_engine,
+                max_hits_per_group=max_hits_per_group,
             )
         except Exception as error:
             failed_groups.append({
@@ -113,6 +135,8 @@ def run_cloud_batch(
             "holding_days": members[0].holding_days,
             "hit_count": len(outcome["hits"]),
             "profile": outcome["profile"],
+            "backtest_requested_count": outcome["backtest_requested_count"],
+            "backtest_reused_count": outcome["backtest_reused_count"],
         })
     return {
         "preference_count": len(preferences),
@@ -123,6 +147,11 @@ def run_cloud_batch(
         "failed_groups": failed_groups,
         "failed_users": failed_users,
         "groups": processed_groups,
+        "elapsed_seconds": round(time.monotonic() - started_at, 3),
+        "limits": {
+            "max_groups": max_groups,
+            "max_hits_per_group": max_hits_per_group,
+        },
     }
 
 
@@ -138,11 +167,16 @@ def _compute_group(
     snapshots: Sequence[Mapping[str, object]],
     company_names: Mapping[str, object],
     rule_engine: RuleEngine,
+    max_hits_per_group: int = 100,
 ) -> dict[str, object]:
     resolved, base_profile = apply_preference(
         preference, options, screening_config
     )
     base_rule = resolved["profiles"][base_profile]
+    expectation_config, expectation_profile = apply_expectation_preference(
+        preference, options, screening_config
+    )
+    expectation_rule = expectation_config["profiles"][expectation_profile]
     hits: list[dict[str, object]] = []
     effective_rule = base_rule
     effective_profile = f"cloud_{signature}"
@@ -166,17 +200,28 @@ def _compute_group(
         effective_rule = stage_rule
         if hits:
             break
+    hits = hits[:max_hits_per_group]
 
     comments: dict[str, str] = {}
+    backtest_requested_count = 0
+    backtest_reused_count = 0
     if hits:
-        BatchBacktester(
-            database, indicator_config, backtest_config, scoring_config
-        ).run(
-            effective_profile,
-            effective_rule,
-            preference.holding_days,
-            codes=[str(hit["code"]) for hit in hits],
+        hit_codes = [str(hit["code"]) for hit in hits]
+        current_date = _latest_trade_date(database)
+        missing_codes = _codes_requiring_backtest(
+            database, hit_codes, effective_profile, current_date
         )
+        backtest_requested_count = len(missing_codes)
+        backtest_reused_count = len(hit_codes) - len(missing_codes)
+        if missing_codes:
+            BatchBacktester(
+                database, indicator_config, backtest_config, scoring_config
+            ).run(
+                effective_profile,
+                expectation_rule,
+                preference.holding_days,
+                codes=missing_codes,
+            )
         with database.connect() as connection:
             screener = Screener(
                 connection, indicator_config, resolved,
@@ -195,16 +240,43 @@ def _compute_group(
                 comments[code] = AnalysisCommentary.integrated_comment(
                     hit, backtest_comment
                 )
-    with database.connect() as connection:
-        screening_date = connection.execute(
-            "SELECT MAX(trade_date) FROM price_daily"
-        ).fetchone()[0]
+    screening_date = _latest_trade_date(database)
     return {
         "screening_date": str(screening_date),
         "profile": effective_profile,
         "hits": hits,
         "comments": comments,
         "condition_summary": json.dumps(
-            effective_rule, ensure_ascii=False, sort_keys=True
+            expectation_rule, ensure_ascii=False, sort_keys=True
         ),
+        "backtest_requested_count": backtest_requested_count,
+        "backtest_reused_count": backtest_reused_count,
     }
+
+
+def _latest_trade_date(database: Database) -> str:
+    with database.connect() as connection:
+        value = connection.execute(
+            "SELECT MAX(trade_date) FROM price_daily"
+        ).fetchone()[0]
+    return str(value)
+
+
+def _codes_requiring_backtest(
+    database: Database,
+    codes: Sequence[str],
+    profile_name: str,
+    as_of_date: str,
+) -> list[str]:
+    if not codes:
+        return []
+    placeholders = ",".join("?" for _ in codes)
+    with database.connect() as connection:
+        rows = connection.execute(
+            f"""SELECT DISTINCT code FROM analysis_snapshot
+                WHERE analysis_type='backtest' AND profile_name=?
+                  AND as_of_date=? AND code IN ({placeholders})""",
+            [profile_name, as_of_date, *codes],
+        ).fetchall()
+    cached = {str(row[0]) for row in rows}
+    return [str(code) for code in codes if str(code) not in cached]

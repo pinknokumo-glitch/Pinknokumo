@@ -37,6 +37,11 @@ application:
   log_level: INFO
   default_result_limit: 100
 
+cloud_screening:
+  # Free-tier guardrails. Identical user settings are still calculated only once.
+  max_groups: 50
+  max_hits_per_group: 100
+
 screening_universe:
   markets: [プライム, スタンダード, グロース]
   prefilter:
