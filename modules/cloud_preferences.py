@@ -20,6 +20,10 @@ class ScreeningPreference:
     manual_logic: str
     manual_conditions: list[dict[str, object]]
     holding_days: int = 60
+    expectation_mode: str | None = None
+    expectation_genre_id: str | None = None
+    expectation_manual_logic: str = "all"
+    expectation_manual_conditions: list[dict[str, object]] | None = None
 
 
 class CloudPreferenceClient:
@@ -44,7 +48,9 @@ class CloudPreferenceClient:
         )
         endpoint = (
             f"{self.url}/rest/v1/screening_preferences?{filters}"
-            "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days&limit=1"
+            "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days,"
+            "expectation_mode,expectation_genre_id,expectation_manual_logic,"
+            "expectation_manual_conditions&limit=1"
         )
         request = Request(endpoint, headers=self.headers())
         try:
@@ -85,14 +91,41 @@ class CloudPreferenceClient:
         holding_days = int(raw.get("holding_days") or 60)
         if holding_days < 1 or holding_days > 250:
             raise ValueError("cloud holding_days must be between 1 and 250")
+        expectation_mode = str(raw.get("expectation_mode") or mode)
+        expectation_genre_id = str(
+            raw.get("expectation_genre_id") or genre_id or ""
+        ) or None
+        expectation_logic = str(raw.get("expectation_manual_logic") or logic)
+        expectation_conditions = raw.get("expectation_manual_conditions")
+        if expectation_conditions is None:
+            expectation_conditions = conditions
+        if not isinstance(expectation_conditions, list):
+            raise ValueError("cloud expectation_manual_conditions must be a list")
+        if expectation_mode == "auto":
+            genres = {
+                str(item["id"]): item
+                for item in options.catalog()["genres"] if item["available"]
+            }
+            if expectation_genre_id not in genres:
+                raise ValueError("cloud expectation_genre_id is unavailable")
+            expectation_conditions = []
+        elif expectation_mode == "manual":
+            options.manual_rule(expectation_conditions, expectation_logic)
+            expectation_genre_id = None
+        else:
+            raise ValueError("cloud expectation_mode is invalid")
         return ScreeningPreference(
-            user_id, mode, genre_id, logic, [dict(item) for item in conditions], holding_days
+            user_id, mode, genre_id, logic, [dict(item) for item in conditions],
+            holding_days, expectation_mode, expectation_genre_id,
+            expectation_logic, [dict(item) for item in expectation_conditions],
         )
 
     def fetch_all(self, options: ScreeningOptions) -> list[ScreeningPreference]:
         endpoint = (
             f"{self.url}/rest/v1/screening_preferences?"
-            "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days"
+            "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days,"
+            "expectation_mode,expectation_genre_id,expectation_manual_logic,"
+            "expectation_manual_conditions"
             "&order=updated_at.asc"
         )
         request = Request(endpoint, headers=self.headers())
@@ -136,3 +169,23 @@ def apply_preference(
     config["profiles"] = profiles
     config["active_profile"] = profile
     return config, profile
+
+
+def apply_expectation_preference(
+    preference: ScreeningPreference,
+    options: ScreeningOptions,
+    screening_config: Mapping[str, object],
+) -> tuple[dict[str, object], str]:
+    expectation = ScreeningPreference(
+        user_id=preference.user_id,
+        mode=preference.expectation_mode or preference.mode,
+        genre_id=preference.expectation_genre_id or preference.genre_id,
+        manual_logic=preference.expectation_manual_logic,
+        manual_conditions=(
+            preference.expectation_manual_conditions
+            if preference.expectation_manual_conditions is not None
+            else preference.manual_conditions
+        ),
+        holding_days=preference.holding_days,
+    )
+    return apply_preference(expectation, options, screening_config)

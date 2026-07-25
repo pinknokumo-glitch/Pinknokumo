@@ -37,6 +37,15 @@ data class CloudScreeningRun(
     val profile: String,
     val holdingDays: Int,
     val hitCount: Int,
+    val conditionSummary: String?,
+)
+data class RequestedBacktest(
+    val code: String,
+    val status: String,
+    val score: Double?,
+    val comment: String?,
+    val prices: List<Price>,
+    val errorMessage: String?,
 )
 
 data class CloudPreference(
@@ -45,6 +54,10 @@ data class CloudPreference(
     val manualLogic: String = "all",
     val manualConditions: List<ManualCondition> = emptyList(),
     val holdingDays: Int = 60,
+    val expectationMode: String = "auto",
+    val expectationGenreId: String? = null,
+    val expectationManualLogic: String = "all",
+    val expectationManualConditions: List<ManualCondition> = emptyList(),
 )
 
 class SupabaseClient(
@@ -119,12 +132,16 @@ class SupabaseClient(
         val response = requestArray(
             "GET",
             "/rest/v1/screening_preferences?user_id=eq.${session.userId}" +
-                "&select=mode,genre_id,manual_logic,manual_conditions,holding_days&limit=1",
+                "&select=mode,genre_id,manual_logic,manual_conditions,holding_days," +
+                "expectation_mode,expectation_genre_id,expectation_manual_logic," +
+                "expectation_manual_conditions&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
         val row = response.getJSONObject(0)
         val conditions = row.optJSONArray("manual_conditions") ?: JSONArray()
+        val expectationConditions =
+            row.optJSONArray("expectation_manual_conditions") ?: conditions
         return CloudPreference(
             mode = row.getString("mode"),
             genreId = row.optString("genre_id").takeIf { it.isNotBlank() },
@@ -134,16 +151,30 @@ class SupabaseClient(
                 ManualCondition(item.getString("field"), item.getString("operator"), item.getDouble("value"))
             },
             holdingDays = row.optInt("holding_days", 60),
+            expectationMode = row.optString("expectation_mode", row.getString("mode")),
+            expectationGenreId = row.optString("expectation_genre_id")
+                .takeIf { it.isNotBlank() } ?: row.optString("genre_id").takeIf { it.isNotBlank() },
+            expectationManualLogic = row.optString("expectation_manual_logic", "all"),
+            expectationManualConditions = (0 until expectationConditions.length()).map { index ->
+                val item = expectationConditions.getJSONObject(index)
+                ManualCondition(item.getString("field"), item.getString("operator"), item.getDouble("value"))
+            },
         )
     }
 
     fun savePreference(session: SupabaseSession, preference: CloudPreference) {
         require(preference.mode in setOf("auto", "manual")) { "保存モードが不正です" }
         require(preference.mode != "auto" || !preference.genreId.isNullOrBlank()) { "ジャンルを選択してください" }
-        require(preference.manualConditions.size <= 8) { "手動条件は8件までです" }
+        require(preference.manualConditions.size <= 32) { "ソート条件は32件までです" }
+        require(preference.expectationManualConditions.size <= 32) { "期待値条件は32件までです" }
         require(preference.holdingDays in 1..250) { "保有営業日数は1～250日で入力してください" }
         val conditions = JSONArray().apply {
             preference.manualConditions.forEach { item ->
+                put(JSONObject().put("field", item.field).put("operator", item.operator).put("value", item.value))
+            }
+        }
+        val expectationConditions = JSONArray().apply {
+            preference.expectationManualConditions.forEach { item ->
                 put(JSONObject().put("field", item.field).put("operator", item.operator).put("value", item.value))
             }
         }
@@ -154,6 +185,10 @@ class SupabaseClient(
             .put("manual_logic", preference.manualLogic)
             .put("manual_conditions", conditions)
             .put("holding_days", preference.holdingDays)
+            .put("expectation_mode", preference.expectationMode)
+            .put("expectation_genre_id", preference.expectationGenreId ?: JSONObject.NULL)
+            .put("expectation_manual_logic", preference.expectationManualLogic)
+            .put("expectation_manual_conditions", expectationConditions)
             .put("updated_at", Instant.now().toString())
         requestArray(
             "POST", "/rest/v1/screening_preferences?on_conflict=user_id", payload, session.accessToken,
@@ -161,13 +196,14 @@ class SupabaseClient(
         )
     }
 
-    fun loadLatestResults(session: SupabaseSession): List<CloudScreeningResult> {
+    fun loadLatestResults(session: SupabaseSession, limit: Int = 30): List<CloudScreeningResult> {
+        val safeLimit = limit.coerceIn(1, 30)
         val response = requestArray(
             "GET",
             "/rest/v1/screening_results?user_id=eq.${session.userId}" +
                 "&select=screening_date,profile_name,position,code,company_name,expectation_score,comment,chart_url" +
                 ",holding_days,condition_summary" +
-                "&order=screening_date.desc,position.asc&limit=10",
+                "&order=screening_date.desc,position.asc&limit=$safeLimit",
             token = session.accessToken,
         )
         if (response.length() == 0) return emptyList()
@@ -194,7 +230,7 @@ class SupabaseClient(
         val response = requestArray(
             "GET",
             "/rest/v1/screening_runs?user_id=eq.${session.userId}" +
-                "&select=screening_date,profile_name,holding_days,hit_count&limit=1",
+                "&select=screening_date,profile_name,holding_days,hit_count,condition_summary&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
@@ -204,6 +240,67 @@ class SupabaseClient(
             profile = row.getString("profile_name"),
             holdingDays = row.getInt("holding_days"),
             hitCount = row.getInt("hit_count"),
+            conditionSummary = row.optString("condition_summary").takeIf { it.isNotEmpty() },
+        )
+    }
+
+    fun loadLatestCandidates(session: SupabaseSession): CandidatePool {
+        val response = requestArray(
+            "GET",
+            "/rest/v1/screening_candidates?select=pool_date,code,updated_at" +
+                "&order=pool_date.desc,code.asc&limit=500",
+            token = session.accessToken,
+        )
+        if (response.length() == 0) return CandidatePool(null, emptyList(), null)
+        val latestDate = response.getJSONObject(0).getString("pool_date")
+        val updatedAt = response.getJSONObject(0).optString("updated_at").takeIf { it.isNotBlank() }
+        val codes = (0 until response.length())
+            .map { response.getJSONObject(it) }
+            .takeWhile { it.getString("pool_date") == latestDate }
+            .map { it.getString("code") }
+        return CandidatePool(latestDate, codes, updatedAt)
+    }
+
+    fun requestBacktest(session: SupabaseSession, code: String) {
+        val normalized = code.trim().uppercase()
+        require(normalized.matches(Regex("[0-9A-Z]{4,5}"))) {
+            "銘柄コードを4～5文字で入力してください"
+        }
+        requestArray(
+            "POST",
+            "/rest/v1/backtest_requests",
+            JSONObject()
+                .put("user_id", session.userId)
+                .put("code", normalized)
+                .put("status", "pending"),
+            session.accessToken,
+            mapOf("Prefer" to "return=representation"),
+        )
+    }
+
+    fun loadLatestBacktest(session: SupabaseSession): RequestedBacktest? {
+        val response = requestArray(
+            "GET",
+            "/rest/v1/backtest_requests?user_id=eq.${session.userId}" +
+                "&select=code,status,result_json,error_message" +
+                "&order=created_at.desc&limit=1",
+            token = session.accessToken,
+        )
+        if (response.length() == 0) return null
+        val row = response.getJSONObject(0)
+        val result = row.optJSONObject("result_json")
+        val expectation = result?.optJSONObject("expectation")
+        val prices = result?.optJSONArray("prices") ?: JSONArray()
+        return RequestedBacktest(
+            code = row.getString("code"),
+            status = row.getString("status"),
+            score = expectation?.optDouble("score")?.takeUnless { it.isNaN() },
+            comment = result?.optString("comment")?.takeIf { it.isNotEmpty() },
+            prices = (0 until prices.length()).map { index ->
+                val price = prices.getJSONObject(index)
+                Price(price.getString("date"), price.getDouble("close"))
+            },
+            errorMessage = row.optString("error_message").takeIf { it.isNotEmpty() },
         )
     }
 

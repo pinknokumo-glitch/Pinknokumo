@@ -136,6 +136,27 @@ def operations_status() -> dict:
     finally:
         connection.close()
 
+@app.get("/candidates/latest")
+def latest_candidates() -> dict:
+    db = Database(ROOT / settings()["database"]["path"])
+    db.initialize()
+    with db.connect() as connection:
+        run = connection.execute(
+            """SELECT pool_date, candidate_count FROM screening_pool_run
+               ORDER BY pool_date DESC LIMIT 1"""
+        ).fetchone()
+        if run is None:
+            return {"pool_date": None, "candidates": []}
+        rows = connection.execute(
+            """SELECT code FROM screening_candidate_pool
+               WHERE pool_date=? ORDER BY code""",
+            [run["pool_date"]],
+        ).fetchall()
+    return {
+        "pool_date": str(run["pool_date"]),
+        "candidates": [str(row["code"]) for row in rows],
+    }
+
 @app.get("/watchlist")
 def watchlist() -> dict:
     db = Database(ROOT / settings()["database"]["path"])

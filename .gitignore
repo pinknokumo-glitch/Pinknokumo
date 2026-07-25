@@ -10,6 +10,7 @@ reports/charts/
 reports/logs/
 work/*.json
 android/.gradle/
+android/.gradle-user-home/
 android/.idea/
 android/wrapper-init/
 android/local.properties

@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from modules.cloud_batch import group_preferences, preference_signature
+from modules.cloud_batch import (
+    _codes_requiring_backtest,
+    group_preferences,
+    preference_signature,
+)
 from modules.cloud_preferences import ScreeningPreference
+from modules.database import Database
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 class CloudBatchTests(unittest.TestCase):
@@ -49,6 +56,33 @@ class CloudBatchTests(unittest.TestCase):
     def test_anonymous_rows_are_not_processed(self) -> None:
         anonymous = self.preference("", 20)
         self.assertEqual(group_preferences([anonymous]), {})
+
+    def test_current_day_backtest_is_reused(self) -> None:
+        with TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "test.db")
+            database.initialize()
+            database.save_analysis_snapshot(
+                "7203", "2026-07-24", "cloud_signature_0", "backtest", {"ok": True}
+            )
+            missing = _codes_requiring_backtest(
+                database,
+                ["7203", "6758"],
+                "cloud_signature_0",
+                "2026-07-24",
+            )
+            self.assertEqual(missing, ["6758"])
+
+    def test_previous_day_backtest_is_not_reused(self) -> None:
+        with TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "test.db")
+            database.initialize()
+            database.save_analysis_snapshot(
+                "7203", "2026-07-23", "cloud_signature_0", "backtest", {"ok": True}
+            )
+            missing = _codes_requiring_backtest(
+                database, ["7203"], "cloud_signature_0", "2026-07-24"
+            )
+            self.assertEqual(missing, ["7203"])
 
 
 if __name__ == "__main__":

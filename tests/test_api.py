@@ -37,6 +37,7 @@ class ApiContractTestCase(unittest.TestCase):
         for path, key in (
             ("/rankings", "rankings"),
             ("/rankings/changes", "changes"),
+            ("/candidates/latest", "candidates"),
             ("/watchlist", "watchlist"),
             ("/portfolio", "positions"),
         ):

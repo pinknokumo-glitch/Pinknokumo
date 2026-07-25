@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from modules.data_loader import DataLoader  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.evening_universe import EveningUniverseJob  # noqa: E402
+from modules.cloud_candidates import CloudCandidatePublisher  # noqa: E402
 
 
 def load_yaml(relative_path: str) -> dict:
@@ -29,6 +31,14 @@ def main() -> int:
     result = EveningUniverseJob(
         database, settings, load_yaml("config/indicators.yaml")
     ).run()
+    url = os.getenv("SUPABASE_URL", "").strip()
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if result["usable"] and url and key:
+        metadata, codes = database.latest_candidate_pool()
+        if metadata is not None:
+            result["cloud_candidate_count"] = CloudCandidatePublisher(
+                url, key
+            ).replace(str(metadata["pool_date"]), codes)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["usable"] else 1
 

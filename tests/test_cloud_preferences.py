@@ -5,7 +5,11 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from modules.cloud_preferences import CloudPreferenceClient, apply_preference
+from modules.cloud_preferences import (
+    CloudPreferenceClient,
+    apply_expectation_preference,
+    apply_preference,
+)
 from modules.screening_options import ScreeningOptions
 
 
@@ -126,6 +130,29 @@ class CloudPreferenceTestCase(unittest.TestCase):
                 {"mode": "auto", "genre_id": "value", "holding_days": 251},
                 self.options,
             )
+
+    def test_expectation_rule_can_differ_from_screening_rule(self) -> None:
+        preference = CloudPreferenceClient.validate({
+            "mode": "auto",
+            "genre_id": "value",
+            "expectation_mode": "manual",
+            "expectation_manual_logic": "all",
+            "expectation_manual_conditions": [
+                {"field": "fundamental.per", "operator": "<=", "value": 10}
+            ],
+        }, self.options)
+        resolved, profile = apply_expectation_preference(
+            preference,
+            self.options,
+            {"active_profile": "value", "profiles": {
+                "value": {"field": "fundamental.per", "operator": "<=", "value": 15}
+            }},
+        )
+        self.assertEqual(profile, "cloud_manual")
+        self.assertEqual(
+            resolved["profiles"][profile]["all"][0]["value"],
+            10,
+        )
 
     def test_fetch_all_skips_invalid_user_without_blocking_valid_users(self) -> None:
         payload = [

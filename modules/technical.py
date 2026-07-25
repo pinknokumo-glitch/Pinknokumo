@@ -39,7 +39,10 @@ class TechnicalAnalyzer:
         ma_cfg = self.config["moving_average"]
         if ma_cfg["enabled"]:
             for period in ma_cfg["periods"]:
-                frame[f"sma_{int(period)}"] = close.rolling(int(period), min_periods=int(period)).mean()
+                period = int(period)
+                average = close.rolling(period, min_periods=period).mean()
+                frame[f"sma_{period}"] = average
+                frame[f"price_vs_sma_{period}_percent"] = (close / average - 1) * 100
 
         bb_cfg = self.config["bollinger_bands"]
         if bb_cfg["enabled"]:
@@ -47,6 +50,8 @@ class TechnicalAnalyzer:
             middle = close.rolling(period, min_periods=period).mean()
             std = close.rolling(period, min_periods=period).std()
             frame["bb_middle"], frame["bb_upper"], frame["bb_lower"] = middle, middle + deviations * std, middle - deviations * std
+            width = (frame["bb_upper"] - frame["bb_lower"]).replace(0, pd.NA)
+            frame["bb_percent_b"] = (close - frame["bb_lower"]) / width * 100
 
         atr_cfg = self.config["atr"]
         if atr_cfg["enabled"]:
@@ -54,6 +59,7 @@ class TechnicalAnalyzer:
             previous_close = close.shift()
             true_range = pd.concat([high - low, (high - previous_close).abs(), (low - previous_close).abs()], axis=1).max(axis=1)
             frame[f"atr_{period}"] = true_range.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+            frame[f"atr_{period}_percent"] = frame[f"atr_{period}"] / close * 100
 
         adx_cfg = self.config["adx"]
         if adx_cfg["enabled"]:
@@ -74,6 +80,10 @@ class TechnicalAnalyzer:
             lowest, highest = low.rolling(k_period).min(), high.rolling(k_period).max()
             frame["stoch_k"] = 100 * (close - lowest) / (highest - lowest)
             frame["stoch_d"] = frame["stoch_k"].rolling(d_period).mean()
+        for sessions in (5, 20, 60):
+            frame[f"return_{sessions}_percent"] = close.pct_change(sessions) * 100
+        volume_average = frame["volume"].rolling(20, min_periods=20).mean()
+        frame["volume_ratio_20"] = frame["volume"] / volume_average * 100
         return frame
 
     @staticmethod
@@ -84,6 +94,9 @@ class TechnicalAnalyzer:
         values = {name: value for name, value in latest.items() if pd.notna(value)}
         previous = frame.iloc[-2].to_dict() if len(frame) > 1 else {}
         for name, value in previous.items():
-            if name.startswith(("rsi_", "macd", "sma_", "adx_", "atr_", "stoch_")) and pd.notna(value):
+            if name.startswith((
+                "rsi_", "macd", "sma_", "adx_", "atr_", "stoch_",
+                "price_vs_sma_", "bb_", "return_", "volume_ratio_",
+            )) and pd.notna(value):
                 values[f"{name}_previous"] = value
         return values

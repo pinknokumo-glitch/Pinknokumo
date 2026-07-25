@@ -1,6 +1,14 @@
 -- Safe upgrade for existing StockAI Supabase projects.
 alter table public.screening_preferences
 add column if not exists holding_days integer not null default 60;
+alter table public.screening_preferences
+add column if not exists expectation_mode text not null default 'auto';
+alter table public.screening_preferences
+add column if not exists expectation_genre_id text;
+alter table public.screening_preferences
+add column if not exists expectation_manual_logic text not null default 'all';
+alter table public.screening_preferences
+add column if not exists expectation_manual_conditions jsonb not null default '[]'::jsonb;
 
 alter table public.screening_preferences
 drop constraint if exists screening_preferences_holding_days_check;
