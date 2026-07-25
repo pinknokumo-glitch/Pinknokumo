@@ -127,6 +127,26 @@ class CloudPreferenceTestCase(unittest.TestCase):
                 self.options,
             )
 
+    def test_fetch_all_skips_invalid_user_without_blocking_valid_users(self) -> None:
+        payload = [
+            {
+                "user_id": "valid", "mode": "auto", "genre_id": "value",
+                "manual_logic": "all", "manual_conditions": [], "holding_days": 20,
+            },
+            {
+                "user_id": "invalid", "mode": "auto", "genre_id": "missing",
+                "manual_logic": "all", "manual_conditions": [], "holding_days": 20,
+            },
+        ]
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = json.dumps(payload).encode("utf-8")
+        client = CloudPreferenceClient("https://example.supabase.co", "sb_secret_test")
+        with patch("modules.cloud_preferences.urlopen", return_value=response):
+            preferences = client.fetch_all(self.options)
+        self.assertEqual([item.user_id for item in preferences], ["valid"])
+        self.assertEqual(client.validation_errors[0]["user_id"], "invalid")
+
 
 if __name__ == "__main__":
     unittest.main()
