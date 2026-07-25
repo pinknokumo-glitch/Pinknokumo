@@ -1,7 +1,8 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-v0121-fresh-notifications",
-    [switch]$RunWorkflow
+    [string]$Branch = "agent/signed-android-artifacts",
+    [switch]$RunWorkflow,
+    [switch]$RunAndroidBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +31,7 @@ $publishFiles = @(
     ".gitignore",
     ".github/workflows/daily.yml",
     ".github/workflows/evening.yml",
+    ".github/workflows/android.yml",
     "android/app/src/main/AndroidManifest.xml",
     "android/app/build.gradle.kts",
     "android/app/src/main/java/jp/stockai/navigator/ApiClient.kt",
@@ -41,6 +43,7 @@ $publishFiles = @(
     "config/settings.yaml",
     "config/screening_options.yaml",
     "docs/SUPABASE_SETUP.md",
+    "docs/ANDROID_DISTRIBUTION.md",
     "modules/batch_backtest.py",
     "modules/cloud_batch.py",
     "modules/cloud_candidates.py",
@@ -56,6 +59,7 @@ $publishFiles = @(
     "scripts/run_evening_universe.py",
     "scripts/run_cloud_user_screenings.py",
     "scripts/run_backtest_requests.py",
+    "scripts/setup_android_signing.ps1",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
     "tests/test_api.py",
@@ -74,7 +78,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Wait for fresh app notification results"
+    & $git commit -m "Add secure signed Android artifact builds"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -110,8 +114,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Wait for fresh results before Android notifications" `
-    --body "Updates Android notifications to wait for the current day's completed cloud run, retry every 10 minutes while results are processing, and prevent old stock results from being sent after a zero-hit run. LINE delivery remains disabled.").Trim()
+    --title "Add secure signed Android APK artifacts" `
+    --body "Adds a manually triggered GitHub Actions build for a consistently signed release APK, validates required secrets, publishes a checksum, and documents secure update distribution. No signing key or service-role credential is committed to the repository.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
@@ -130,4 +134,15 @@ if ($RunWorkflow) {
 }
 else {
     Write-Output "Workflow was not started."
+}
+
+if ($RunAndroidBuild) {
+    & $gh workflow run android.yml --repo $Repository --ref main
+    if ($LASTEXITCODE -ne 0) { throw "Could not start the Android APK build." }
+    Start-Sleep -Seconds 3
+    $androidRunId = (& $gh run list --repo $Repository --workflow android.yml --limit 1 `
+        --json databaseId --jq '.[0].databaseId').Trim()
+    Write-Output "Started Android APK build: $androidRunId"
+    Write-Output "Build URL: https://github.com/$Repository/actions/runs/$androidRunId"
+    Write-Output "Monitor with: gh run watch $androidRunId --repo $Repository"
 }
