@@ -141,12 +141,20 @@ def run_cloud_batch(
             publisher = CloudResultPublisher(
                 supabase_url, service_role_key, str(member.user_id)
             )
+            condition_summary = json.dumps(
+                effective_rule, ensure_ascii=False, sort_keys=True
+            )
             publisher.replace(
                 str(screening_date), effective_profile, hits, comments,
                 holding_days=preference.holding_days,
-                condition_summary=json.dumps(
-                    effective_rule, ensure_ascii=False, sort_keys=True
-                ),
+                condition_summary=condition_summary,
+            )
+            publisher.publish_run(
+                str(screening_date),
+                effective_profile,
+                preference.holding_days,
+                condition_summary,
+                len(hits),
             )
             published_users += 1
         processed_groups.append({

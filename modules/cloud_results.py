@@ -84,6 +84,40 @@ class CloudResultPublisher:
             holding_days, condition_summary,
         )
 
+    def publish_run(
+        self,
+        screening_date: str,
+        profile: str,
+        holding_days: int,
+        condition_summary: str,
+        hit_count: int,
+    ) -> None:
+        payload = [{
+            "user_id": self.user_id,
+            "screening_date": screening_date,
+            "profile_name": profile,
+            "holding_days": holding_days,
+            "condition_summary": condition_summary,
+            "hit_count": hit_count,
+        }]
+        request = Request(
+            f"{self.url}/rest/v1/screening_runs?on_conflict=user_id",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            method="POST",
+            headers={
+                **self.headers(),
+                "Content-Type": "application/json; charset=utf-8",
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+        )
+        try:
+            with urlopen(request, timeout=20):
+                pass
+        except (HTTPError, URLError) as error:
+            raise RuntimeError(
+                f"Could not publish cloud screening run: {type(error).__name__}"
+            ) from error
+
     def headers(self) -> dict[str, str]:
         headers = {"apikey": self.key, "Accept": "application/json"}
         if self.key.startswith("eyJ"):

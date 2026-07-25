@@ -35,3 +35,23 @@ on public.screening_results for select
 to authenticated
 using ((select auth.uid()) = user_id);
 
+create table if not exists public.screening_runs (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  screening_date date not null,
+  profile_name text not null,
+  holding_days integer not null check (holding_days between 1 and 250),
+  condition_summary text,
+  hit_count integer not null check (hit_count >= 0),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.screening_runs enable row level security;
+
+grant select on table public.screening_runs to authenticated;
+
+drop policy if exists "read own screening run" on public.screening_runs;
+create policy "read own screening run"
+on public.screening_runs for select
+to authenticated
+using ((select auth.uid()) = user_id);
+

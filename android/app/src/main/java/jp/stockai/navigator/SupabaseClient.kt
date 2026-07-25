@@ -32,6 +32,12 @@ data class CloudScreeningResult(
     val holdingDays: Int?,
     val conditionSummary: String?,
 )
+data class CloudScreeningRun(
+    val screeningDate: String,
+    val profile: String,
+    val holdingDays: Int,
+    val hitCount: Int,
+)
 
 data class CloudPreference(
     val mode: String,
@@ -182,6 +188,23 @@ class SupabaseClient(
                     conditionSummary = row.optString("condition_summary").takeIf { it.isNotEmpty() },
                 )
             }
+    }
+
+    fun loadLatestRun(session: SupabaseSession): CloudScreeningRun? {
+        val response = requestArray(
+            "GET",
+            "/rest/v1/screening_runs?user_id=eq.${session.userId}" +
+                "&select=screening_date,profile_name,holding_days,hit_count&limit=1",
+            token = session.accessToken,
+        )
+        if (response.length() == 0) return null
+        val row = response.getJSONObject(0)
+        return CloudScreeningRun(
+            screeningDate = row.getString("screening_date"),
+            profile = row.getString("profile_name"),
+            holdingDays = row.getInt("holding_days"),
+            hitCount = row.getInt("hit_count"),
+        )
     }
 
     private fun request(method: String, path: String, payload: JSONObject? = null, token: String? = null): JSONObject =
