@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/signed-android-artifacts",
+    [string]$Branch = "agent/fix-android-apk-build",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -78,7 +78,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add secure signed Android artifact builds"
+    & $git commit -m "Fix signed Android APK workflow"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -114,8 +114,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add secure signed Android APK artifacts" `
-    --body "Adds a manually triggered GitHub Actions build for a consistently signed release APK, validates required secrets, publishes a checksum, and documents secure update distribution. No signing key or service-role credential is committed to the repository.").Trim()
+    --title "Fix signed Android APK workflow" `
+    --body "Makes the Gradle wrapper executable on the Linux Actions runner so the securely signed Android release APK can be built and uploaded. No credentials are changed or committed.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
