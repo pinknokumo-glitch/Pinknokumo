@@ -119,11 +119,20 @@ class MainActivity : ComponentActivity() {
                 StockAiBackground {
                     val session = activeSession
                     if (session == null) {
+                        var storedSession by remember(callbackSession) {
+                            mutableStateOf(callbackSession ?: sessionStore.load())
+                        }
                         StartupLoginScreen(
-                            storedSession = callbackSession ?: sessionStore.load(),
+                            storedSession = storedSession,
                             onAuthenticated = {
                                 sessionStore.save(it)
+                                storedSession = it
                                 activeSession = it
+                            },
+                            onForgetStoredSession = {
+                                sessionStore.clear()
+                                callbackSession = null
+                                storedSession = null
                             },
                         )
                     } else {
@@ -230,6 +239,7 @@ private fun StockAiBackground(content: @Composable () -> Unit) {
 private fun StartupLoginScreen(
     storedSession: SupabaseSession?,
     onAuthenticated: (SupabaseSession) -> Unit,
+    onForgetStoredSession: () -> Unit,
 ) {
     val cloud = remember { SupabaseClient() }
     val scope = rememberCoroutineScope()
@@ -240,6 +250,7 @@ private fun StartupLoginScreen(
     var authMode by remember { mutableStateOf("login") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var information by remember { mutableStateOf<String?>(null) }
     var showPassword by remember { mutableStateOf(false) }
     var showPolicy by remember { mutableStateOf(false) }
 
@@ -260,6 +271,7 @@ private fun StartupLoginScreen(
                     onClick = {
                         busy = true
                         error = null
+                        information = null
                         scope.launch {
                             runCatching {
                                 withContext(Dispatchers.IO) {
@@ -274,21 +286,39 @@ private fun StartupLoginScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("${saved.email} でログイン") }
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        onForgetStoredSession()
+                        error = null
+                        information = "保存済みログインを解除しました。"
+                    },
+                    modifier = Modifier.align(Alignment.End),
+                ) { Text("別のアカウントを使う") }
                 HorizontalDivider()
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilterChip(
                     selected = authMode == "login",
-                    onClick = { authMode = "login"; error = null },
+                    onClick = {
+                        authMode = "login"
+                        error = null
+                        information = null
+                    },
                     label = { Text("ログイン") },
                 )
                 FilterChip(
                     selected = authMode == "register",
-                    onClick = { authMode = "register"; error = null },
+                    onClick = {
+                        authMode = "register"
+                        error = null
+                        information = null
+                    },
                     label = { Text("新規登録") },
                 )
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            information?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             OutlinedTextField(
                 value = email, onValueChange = { email = it },
                 label = { Text("メール") },
@@ -333,20 +363,26 @@ private fun StartupLoginScreen(
                     focusManager.clearFocus()
                     busy = true
                     error = null
+                    information = null
                     scope.launch {
                         runCatching {
                             withContext(Dispatchers.IO) {
                                 if (authMode == "register") {
                                     require(password == confirmPassword) { "確認用パスワードが一致しません" }
                                     cloud.signUp(email, password).session
-                                        ?: throw IllegalStateException(
-                                            "登録メールを送信しました。メール確認後に起動してください。"
-                                        )
                                 } else {
                                     cloud.signIn(email, password)
                                 }
                             }
-                        }.onSuccess(onAuthenticated)
+                        }.onSuccess { authenticated ->
+                            if (authenticated == null) {
+                                information =
+                                    "登録確認メールを送信しました。メール内のリンクを開いた後、この画面からログインしてください。"
+                                authMode = "login"
+                            } else {
+                                onAuthenticated(authenticated)
+                            }
+                        }
                             .onFailure { error = it.message ?: "ログインできませんでした" }
                         password = ""
                         confirmPassword = ""
@@ -653,7 +689,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.12.2",
+        "バージョン" to "StockAI Navigator 0.12.3",
+        "0.12.3" to "登録確認メール送信を成功表示に変更し、保存済みログインから別アカウントへ切り替える操作を追加。",
         "0.12.2" to "ログイン画面のスクロール、キーボード収納、パスワード表示切替、登録前のプライバシー・免責確認を追加。",
         "0.12.1" to "当日結果の完成待ち、10分間隔の自動再確認、前回結果の誤通知防止を追加。",
         "0.12.0" to "時・分の分離入力、保存完了表示、キーボード制御、即時テスト通知を追加。",
