@@ -196,11 +196,27 @@ object NotificationScheduler {
     const val KEY_LAST_RUN_UPDATED_AT = "last_notified_run_updated_at"
     const val KEY_LAST_STATUS = "last_notification_status"
     const val KEY_LAST_RUN_AT = "last_notification_run_at"
+    private const val KEY_SCHEDULE_VERSION = "schedule_version"
     private const val WORK_NAME = "stockai_daily_app_notification"
     private const val TEST_WORK_NAME = "stockai_test_app_notification"
     private const val FRESHNESS_WORK_NAME = "stockai_fresh_result_retry"
 
+    fun rescheduleSaved(context: Context) {
+        val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        val savedTime = preferences.getString(KEY_TIME, null)?.takeIf { it.isNotBlank() } ?: return
+        if (preferences.getInt(KEY_SCHEDULE_VERSION, 0) >= BuildConfig.VERSION_CODE) return
+        scheduleInternal(context, savedTime, cancelFreshnessRetry = false)
+    }
+
     fun schedule(context: Context, time: String) {
+        scheduleInternal(context, time, cancelFreshnessRetry = true)
+    }
+
+    private fun scheduleInternal(
+        context: Context,
+        time: String,
+        cancelFreshnessRetry: Boolean,
+    ) {
         val parts = time.split(":")
         val hour = parts.getOrNull(0)?.toIntOrNull() ?: 10
         val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -214,12 +230,18 @@ object NotificationScheduler {
             .addTag(WORK_NAME)
             .build()
         val workManager = WorkManager.getInstance(context)
-        workManager.cancelUniqueWork(FRESHNESS_WORK_NAME)
+        if (cancelFreshnessRetry) {
+            workManager.cancelUniqueWork(FRESHNESS_WORK_NAME)
+        }
         workManager.enqueueUniquePeriodicWork(
             WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_SCHEDULE_VERSION, BuildConfig.VERSION_CODE)
+            .apply()
     }
 
     fun runTest(context: Context) {

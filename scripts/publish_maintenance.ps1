@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-notification-reliability",
+    [string]$Branch = "agent/android-notification-reschedule",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -80,7 +80,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Improve Android notification reliability"
+    & $git commit -m "Reschedule saved Android notifications"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -116,8 +116,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Improve Android notification reliability" `
-    --body "Avoids marking blocked notifications as delivered and delays cloud notification work until a network connection is available. Bumps the Android app to 0.12.4.").Trim()
+    --title "Reschedule saved Android notifications" `
+    --body "Automatically reapplies a previously saved notification schedule whenever the app starts, including after an app update. Bumps the Android app to 0.12.5.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
