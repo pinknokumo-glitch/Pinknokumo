@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/multi-user-screening",
+    [string]$Branch = "agent/cloud-screening-status",
     [switch]$RunWorkflow
 )
 
@@ -59,7 +59,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add multi-user cloud screening"
+    & $git commit -m "Show zero-hit cloud screening status"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -95,8 +95,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add multi-user cloud screening" `
-    --body "Adds secure reusable Android sessions, configurable expectation holding periods, and per-user cloud screening. Identical technical and fundamental rules are grouped so their full-condition backtests are computed once and published separately under RLS.").Trim()
+    --title "Show zero-hit cloud screening status" `
+    --body "Records every per-user screening completion, including zero-hit days, and displays its date, hit count, and expectation horizon in Android. This prevents stale prior-day results from looking current.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

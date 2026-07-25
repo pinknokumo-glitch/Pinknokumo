@@ -249,6 +249,7 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
     var refreshToken by remember { mutableIntStateOf(0) }
     var cloudSession by remember { mutableStateOf(initialSession) }
     var cloudResults by remember { mutableStateOf<List<CloudScreeningResult>>(emptyList()) }
+    var cloudRun by remember { mutableStateOf<CloudScreeningRun?>(null) }
     var cloudStatus by remember { mutableStateOf<String?>(null) }
     var showLogin by remember { mutableStateOf(false) }
     var loginPurpose by remember { mutableStateOf("save") }
@@ -303,13 +304,18 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
         cloudBusy = true
         cloudStatus = null
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { cloud.loadLatestResults(session) } }
-                .onSuccess { results ->
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    cloud.loadLatestRun(session) to cloud.loadLatestResults(session)
+                }
+            }
+                .onSuccess { (run, results) ->
+                    cloudRun = run
                     cloudResults = results
-                    cloudStatus = if (results.isEmpty()) {
+                    cloudStatus = if (run == null) {
                         "クラウド結果はまだありません"
                     } else {
-                        "${results.first().screeningDate} の結果を読み込みました"
+                        "${run.screeningDate} の処理完了（該当${run.hitCount}件）"
                     }
                 }
                 .onFailure { cloudStatus = "クラウドエラー: ${it.message ?: "読み込めませんでした"}" }
@@ -460,6 +466,19 @@ private fun ScreeningScreen(initialSession: SupabaseSession?, onBack: () -> Unit
                         } else {
                             Color(0xFF2E7D32)
                         },
+                    )
+                }
+            }
+            cloudRun?.let { run ->
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "最新処理: ${run.screeningDate} / 該当${run.hitCount}件",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        "期待値期間: ${run.holdingDays}営業日 / 保存した全条件で検証",
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }

@@ -56,6 +56,22 @@ class CloudResultPublisherTests(unittest.TestCase):
         self.assertEqual(request.method, "DELETE")
         self.assertIn("user_id=eq.user-1", request.full_url)
 
+    def test_publish_run_records_zero_hit_completion(self) -> None:
+        publisher = CloudResultPublisher(
+            "https://example.supabase.co", "sb_secret_test", "user-1"
+        )
+        response = MagicMock()
+        response.__enter__.return_value = response
+        with patch("modules.cloud_results.urlopen", return_value=response) as send:
+            publisher.publish_run(
+                "2026-07-25", "cloud-profile", 20, '{"all":[]}', 0
+            )
+        request = send.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(payload[0]["hit_count"], 0)
+        self.assertEqual(payload[0]["holding_days"], 20)
+        self.assertIn("on_conflict=user_id", request.full_url)
+
 
 if __name__ == "__main__":
     unittest.main()
