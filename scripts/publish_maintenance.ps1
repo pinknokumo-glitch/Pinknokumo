@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/fix-android-apk-build",
+    [string]$Branch = "agent/one-command-android-updates",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -59,7 +59,9 @@ $publishFiles = @(
     "scripts/run_evening_universe.py",
     "scripts/run_cloud_user_screenings.py",
     "scripts/run_backtest_requests.py",
+    "scripts/install_signed_android.ps1",
     "scripts/setup_android_signing.ps1",
+    "scripts/update_signed_android.ps1",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
     "tests/test_api.py",
@@ -78,7 +80,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Fix signed Android APK workflow"
+    & $git commit -m "Automate signed Android app updates"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -114,8 +116,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Fix signed Android APK workflow" `
-    --body "Makes the Gradle wrapper executable on the Linux Actions runner so the securely signed Android release APK can be built and uploaded. No credentials are changed or committed.").Trim()
+    --title "Automate signed Android app updates" `
+    --body "Builds signed Android artifacts automatically after Android changes reach main and adds checksum-verified one-command download and update scripts. Existing app data is preserved for normal signed updates.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
