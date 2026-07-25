@@ -595,7 +595,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.12.0",
+        "バージョン" to "StockAI Navigator 0.12.1",
+        "0.12.1" to "当日結果の完成待ち、10分間隔の自動再確認、前回結果の誤通知防止を追加。",
         "0.12.0" to "時・分の分離入力、保存完了表示、キーボード制御、即時テスト通知を追加。",
         "0.11.2" to "端末内のテスト通知と通知処理結果の記録を追加。",
         "0.11.1" to "通知タップ後に配信結果を直接開く導線と通知予定表示を追加。",
@@ -1605,7 +1606,8 @@ private fun ScreeningScreen(
                     Text("アプリ通知の設定", style = MaterialTheme.typography.titleMedium)
                     Text("LINE配信は使用しません。")
                     Text(
-                        "端末の省電力設定により、指定時刻から数分遅れる場合があります。",
+                        "指定時刻以降、当日のクラウド処理が完了してから通知します。" +
+                            "処理中の場合は10分ごとに自動確認します。",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
