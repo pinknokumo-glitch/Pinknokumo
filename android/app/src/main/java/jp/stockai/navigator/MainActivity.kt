@@ -19,8 +19,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -230,16 +233,23 @@ private fun StartupLoginScreen(
 ) {
     val cloud = remember { SupabaseClient() }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var authMode by remember { mutableStateOf("login") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showPassword by remember { mutableStateOf(false) }
+    var showPolicy by remember { mutableStateOf(false) }
 
     Scaffold(topBar = { TopAppBar(title = { Text("StockAI Navigator") }) }) { padding ->
         Column(
-            Modifier.padding(padding).padding(24.dp).fillMaxWidth(),
+            Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("ログイン", style = MaterialTheme.typography.headlineSmall)
@@ -281,24 +291,46 @@ private fun StartupLoginScreen(
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             OutlinedTextField(
                 value = email, onValueChange = { email = it },
-                label = { Text("メール") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("メール") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = password, onValueChange = { password = it },
-                label = { Text("パスワード") }, visualTransformation = PasswordVisualTransformation(),
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("パスワード") },
+                visualTransformation = if (showPassword) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = {
+                    TextButton(onClick = { showPassword = !showPassword }) {
+                        Text(if (showPassword) "隠す" else "表示")
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
             )
             if (authMode == "register") {
                 OutlinedTextField(
                     value = confirmPassword, onValueChange = { confirmPassword = it },
                     label = { Text("パスワード（確認）") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = if (showPassword) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             Button(
                 enabled = !busy && email.isNotBlank() && password.isNotBlank(),
                 onClick = {
+                    focusManager.clearFocus()
                     busy = true
                     error = null
                     scope.launch {
@@ -323,6 +355,32 @@ private fun StartupLoginScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (busy) "処理中" else if (authMode == "register") "登録" else "ログイン") }
+            TextButton(
+                onClick = { showPolicy = !showPolicy },
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text(if (showPolicy) "プライバシー・免責事項を閉じる" else "プライバシー・免責事項")
+            }
+            if (showPolicy) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("認証", fontWeight = FontWeight.Bold)
+                        Text("認証にはSupabaseを利用します。パスワードをアプリ独自のデータベースへ保存しません。")
+                        Text("設定データ", fontWeight = FontWeight.Bold)
+                        Text("ソート条件・期待値条件・分析依頼はログインユーザーごとに分離して保存します。")
+                        Text("免責事項", fontWeight = FontWeight.Bold)
+                        Text("本アプリの情報は投資助言ではなく、将来の利益を保証しません。最終判断は利用者自身で行ってください。")
+                    }
+                }
+            }
         }
     }
 }
@@ -595,7 +653,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.12.1",
+        "バージョン" to "StockAI Navigator 0.12.2",
+        "0.12.2" to "ログイン画面のスクロール、キーボード収納、パスワード表示切替、登録前のプライバシー・免責確認を追加。",
         "0.12.1" to "当日結果の完成待ち、10分間隔の自動再確認、前回結果の誤通知防止を追加。",
         "0.12.0" to "時・分の分離入力、保存完了表示、キーボード制御、即時テスト通知を追加。",
         "0.11.2" to "端末内のテスト通知と通知処理結果の記録を追加。",

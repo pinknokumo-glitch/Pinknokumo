@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/one-command-android-updates",
+    [string]$Branch = "agent/android-login-usability",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -80,7 +80,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Automate signed Android app updates"
+    & $git commit -m "Improve Android login usability"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -116,8 +116,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Automate signed Android app updates" `
-    --body "Builds signed Android artifacts automatically after Android changes reach main and adds checksum-verified one-command download and update scripts. Existing app data is preserved for normal signed updates.").Trim()
+    --title "Improve Android login usability" `
+    --body "Adds scroll-safe login and registration, password visibility controls, keyboard dismissal, and pre-login privacy and investment-risk disclosures. Bumps the Android app to 0.12.2.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
