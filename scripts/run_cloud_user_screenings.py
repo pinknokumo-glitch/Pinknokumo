@@ -31,7 +31,8 @@ def main() -> int:
     settings = load_yaml("config/settings.yaml")
     screening = load_yaml("config/screening.yaml")
     options = ScreeningOptions(load_yaml("config/screening_options.yaml"), screening)
-    preferences = CloudPreferenceClient(url, key).fetch_all(options)
+    client = CloudPreferenceClient(url, key)
+    preferences = client.fetch_all(options)
     database = Database(ROOT / settings["database"]["path"])
     database.initialize()
     result = run_cloud_batch(
@@ -48,9 +49,20 @@ def main() -> int:
         # The RSI-only morning prefilter would incorrectly exclude value/dividend users.
         candidate_codes=None,
     )
-    database.save_job_run("cloud_user_screening", "success", result)
+    result["invalid_preference_count"] = len(client.validation_errors)
+    result["invalid_preferences"] = client.validation_errors
+    has_failures = bool(
+        client.validation_errors
+        or result["failed_group_count"]
+        or result["failed_user_count"]
+    )
+    database.save_job_run(
+        "cloud_user_screening",
+        "partial_failure" if has_failures else "success",
+        result,
+    )
     print(json.dumps({"cloud_user_screening": result}, ensure_ascii=False, indent=2))
-    return 0
+    return 1 if has_failures else 0
 
 
 if __name__ == "__main__":

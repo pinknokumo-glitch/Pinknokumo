@@ -27,6 +27,7 @@ class CloudPreferenceClient:
         self.url = url.rstrip("/")
         self.key = service_role_key
         self.user_id = user_id
+        self.validation_errors: list[dict[str, str]] = []
 
     @classmethod
     def from_environment(cls) -> "CloudPreferenceClient | None":
@@ -102,7 +103,17 @@ class CloudPreferenceClient:
             raise RuntimeError(
                 f"Could not load cloud screening preferences: {type(error).__name__}"
             ) from error
-        return [self.validate(row, options) for row in rows]
+        self.validation_errors = []
+        valid = []
+        for row in rows:
+            try:
+                valid.append(self.validate(row, options))
+            except (TypeError, ValueError) as error:
+                self.validation_errors.append({
+                    "user_id": str(row.get("user_id") or ""),
+                    "error": f"{type(error).__name__}: {error}",
+                })
+        return valid
 
 
 def apply_preference(
