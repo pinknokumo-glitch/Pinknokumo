@@ -31,6 +31,11 @@ class CloudCandidatePublisherTests(unittest.TestCase):
             )
         self.assertEqual(count, 0)
         self.assertEqual(send.call_count, 3)
+        candidate_cleanup_request = send.call_args_list[0].args[0]
+        self.assertIn(
+            "screening_candidates?pool_date=eq.2026-07-27",
+            candidate_cleanup_request.full_url,
+        )
         run_request = send.call_args.args[0]
         payload = json.loads(run_request.data.decode("utf-8"))[0]
         self.assertEqual(payload["candidate_count"], 0)

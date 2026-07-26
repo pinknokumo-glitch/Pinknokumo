@@ -29,7 +29,8 @@ class CloudCandidatePublisher:
             headers["Authorization"] = f"Bearer {self.key}"
         try:
             self._send(Request(
-                f"{self.url}/rest/v1/screening_candidates",
+                f"{self.url}/rest/v1/screening_candidates"
+                f"?pool_date=eq.{quote(pool_date)}",
                 method="DELETE",
                 headers=headers,
             ), "candidate cleanup")
