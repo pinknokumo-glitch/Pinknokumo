@@ -23,6 +23,7 @@ create index if not exists screening_candidates_date_idx
 on public.screening_candidates (pool_date desc, code);
 alter table public.screening_candidates enable row level security;
 grant select on table public.screening_candidates to authenticated;
+grant select, insert, delete on table public.screening_candidates to service_role;
 drop policy if exists "authenticated users read candidate pool"
 on public.screening_candidates;
 create policy "authenticated users read candidate pool"
@@ -43,6 +44,7 @@ create index if not exists backtest_requests_user_created_idx
 on public.backtest_requests (user_id, created_at desc);
 alter table public.backtest_requests enable row level security;
 grant select, insert on table public.backtest_requests to authenticated;
+grant select, update on table public.backtest_requests to service_role;
 drop policy if exists "users read own backtest requests" on public.backtest_requests;
 create policy "users read own backtest requests"
 on public.backtest_requests for select to authenticated

@@ -42,6 +42,10 @@ grant select, insert, update
 on table public.screening_preferences
 to authenticated;
 
+grant select
+on table public.screening_preferences
+to service_role;
+
 drop policy if exists "read own screening preference" on public.screening_preferences;
 create policy "read own screening preference"
 on public.screening_preferences for select

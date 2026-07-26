@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/fix-candidate-cloud-publish",
+    [string]$Branch = "agent/service-role-schema-grants",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -68,6 +68,7 @@ $publishFiles = @(
     "tests/test_cloud_batch.py",
     "tests/test_cloud_preferences.py",
     "tests/test_cloud_candidates.py",
+    "tests/test_supabase_schema.py",
     "supabase/screening_preferences.sql",
     "supabase/screening_results.sql",
     "supabase/screening_candidates.sql",
@@ -81,7 +82,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Fix candidate cloud publishing"
+    & $git commit -m "Document Supabase service-role grants"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -119,8 +120,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Fix candidate cloud publishing" `
-    --body "Makes the candidate-run schema migration rerunnable, removes the fragile upsert dependency, and includes Supabase response details in future failure logs.").Trim()
+    --title "Document Supabase service-role grants" `
+    --body "Keeps the checked-in Supabase schemas aligned with the runtime permissions verified by the successful multi-user app delivery test, and adds regression coverage for the required grants.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
