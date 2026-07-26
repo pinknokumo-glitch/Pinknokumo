@@ -38,6 +38,13 @@ class CloudBatchTests(unittest.TestCase):
         self.assertNotEqual(preference_signature(short), preference_signature(long))
         self.assertEqual(len(group_preferences([short, long])), 2)
 
+    def test_trade_direction_changes_computation_group(self) -> None:
+        long = self.preference("a")
+        short = ScreeningPreference(
+            **{**long.__dict__, "user_id": "b", "trade_direction": "short"}
+        )
+        self.assertNotEqual(preference_signature(long), preference_signature(short))
+
     def test_technical_threshold_changes_expectation_group(self) -> None:
         first = self.preference("a")
         second = ScreeningPreference(

@@ -9,6 +9,13 @@ alter table public.screening_preferences
 add column if not exists expectation_manual_logic text not null default 'all';
 alter table public.screening_preferences
 add column if not exists expectation_manual_conditions jsonb not null default '[]'::jsonb;
+alter table public.screening_preferences
+add column if not exists trade_direction text not null default 'long';
+alter table public.screening_preferences
+drop constraint if exists screening_preferences_trade_direction_check;
+alter table public.screening_preferences
+add constraint screening_preferences_trade_direction_check
+check (trade_direction in ('long', 'short'));
 
 alter table public.screening_preferences
 drop constraint if exists screening_preferences_holding_days_check;
@@ -20,6 +27,10 @@ alter table public.screening_results
 add column if not exists holding_days integer;
 alter table public.screening_results
 add column if not exists condition_summary text;
+alter table public.screening_results
+add column if not exists expectation_condition_summary text;
+alter table public.screening_results
+add column if not exists trade_direction text not null default 'long';
 
 grant select, insert, update
 on table public.screening_preferences
@@ -43,9 +54,22 @@ create table if not exists public.screening_runs (
   profile_name text not null,
   holding_days integer not null check (holding_days between 1 and 250),
   condition_summary text,
+  expectation_condition_summary text,
+  trade_direction text not null default 'long' check (trade_direction in ('long', 'short')),
+  relaxation_label text,
+  relaxation_counts jsonb not null default '[]'::jsonb,
   hit_count integer not null check (hit_count >= 0),
   updated_at timestamptz not null default now()
 );
+
+alter table public.screening_runs
+add column if not exists expectation_condition_summary text;
+alter table public.screening_runs
+add column if not exists trade_direction text not null default 'long';
+alter table public.screening_runs
+add column if not exists relaxation_label text;
+alter table public.screening_runs
+add column if not exists relaxation_counts jsonb not null default '[]'::jsonb;
 
 alter table public.screening_runs enable row level security;
 grant select on table public.screening_runs to authenticated;

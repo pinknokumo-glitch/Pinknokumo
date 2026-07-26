@@ -53,6 +53,105 @@ class BacktestPointInTimeTestCase(unittest.TestCase):
         self.assertTrue(pd.isna(values.loc[1, "weekly__close"]))
         self.assertEqual(values.loc[2, "weekly__close"], 50.0)
 
+    def test_long_trade_buys_low_and_exits_after_high_signal(self) -> None:
+        daily = prices([f"2026-01-0{day}" for day in range(1, 6)])
+        daily["open"] = [80.0, 82.0, 100.0, 112.0, 113.0]
+        daily["high"] = [81.0, 84.0, 111.0, 114.0, 115.0]
+        daily["low"] = [79.0, 81.0, 99.0, 111.0, 112.0]
+        daily["close"] = [80.0, 83.0, 110.0, 113.0, 114.0]
+
+        trades = self.backtester.run(
+            daily,
+            {"field": "daily.close", "operator": "<=", "value": 80},
+            holding_days=3,
+            exit_rule={"field": "daily.close", "operator": ">=", "value": 110},
+            position_side="long",
+        )
+
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].entry_price, 82.0)
+        self.assertEqual(trades[0].exit_price, 112.0)
+        self.assertEqual(trades[0].exit_reason, "condition")
+        self.assertGreater(trades[0].return_percent, 0)
+
+    def test_short_trade_sells_high_and_covers_after_low_signal(self) -> None:
+        daily = prices([f"2026-01-0{day}" for day in range(1, 6)])
+        daily["open"] = [120.0, 118.0, 100.0, 88.0, 87.0]
+        daily["high"] = [121.0, 119.0, 101.0, 89.0, 88.0]
+        daily["low"] = [119.0, 117.0, 89.0, 87.0, 86.0]
+        daily["close"] = [120.0, 117.0, 90.0, 88.0, 87.0]
+
+        trades = self.backtester.run(
+            daily,
+            {"field": "daily.close", "operator": ">=", "value": 120},
+            holding_days=3,
+            exit_rule={"field": "daily.close", "operator": "<=", "value": 90},
+            position_side="short",
+        )
+
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].entry_price, 118.0)
+        self.assertEqual(trades[0].exit_price, 88.0)
+        self.assertEqual(trades[0].position_side, "short")
+        self.assertGreater(trades[0].return_percent, 0)
+
+    def test_probability_of_price_rising_within_period(self) -> None:
+        daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
+        daily["open"] = [80.0, 100.0, 99.0, 98.0, 97.0, 96.0]
+        daily["close"] = [80.0, 99.0, 101.0, 98.0, 97.0, 96.0]
+        daily["high"] = daily["close"] + 1
+        daily["low"] = daily["close"] - 1
+
+        trades = self.backtester.run(
+            daily,
+            {"field": "daily.close", "operator": "<=", "value": 80},
+            holding_days=3,
+            evaluation_mode="within_period_up",
+        )
+        summary = self.backtester.summarize(trades)
+
+        self.assertEqual(trades[0].exit_reason, "price_improvement")
+        self.assertTrue(trades[0].target_reached)
+        self.assertEqual(summary["outcome_probability_percent"], 100.0)
+
+    def test_target_return_probability_uses_intraday_high(self) -> None:
+        daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
+        daily["open"] = [80.0, 100.0, 101.0, 102.0, 103.0, 104.0]
+        daily["close"] = [80.0, 100.0, 101.0, 102.0, 103.0, 104.0]
+        daily["high"] = [81.0, 101.0, 106.0, 103.0, 104.0, 105.0]
+        daily["low"] = daily["close"] - 1
+
+        trades = self.backtester.run(
+            daily,
+            {"field": "daily.close", "operator": "<=", "value": 80},
+            holding_days=3,
+            evaluation_mode="target_return",
+            target_return_percent=5.0,
+        )
+
+        self.assertTrue(trades[0].target_reached)
+        self.assertEqual(trades[0].exit_reason, "target_return")
+        self.assertAlmostEqual(trades[0].return_percent, 5.0)
+
+    def test_short_target_probability_uses_intraday_low(self) -> None:
+        daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
+        daily["open"] = [120.0, 100.0, 99.0, 98.0, 97.0, 96.0]
+        daily["close"] = [120.0, 100.0, 99.0, 98.0, 97.0, 96.0]
+        daily["high"] = daily["close"] + 1
+        daily["low"] = [119.0, 99.0, 94.0, 97.0, 96.0, 95.0]
+
+        trades = self.backtester.run(
+            daily,
+            {"field": "daily.close", "operator": ">=", "value": 120},
+            holding_days=3,
+            position_side="short",
+            evaluation_mode="target_return",
+            target_return_percent=5.0,
+        )
+
+        self.assertTrue(trades[0].target_reached)
+        self.assertAlmostEqual(trades[0].return_percent, 5.0)
+
     def test_threshold_research_ranks_only_eligible_candidates_first(self) -> None:
         rule = oversold_rule({"daily": 60, "weekly": 50, "monthly": 50})
         self.assertEqual([condition["value"] for condition in rule["all"]], [60.0, 50.0, 50.0])

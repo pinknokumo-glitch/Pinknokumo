@@ -42,6 +42,14 @@ class ScreeningRelaxationTests(unittest.TestCase):
     def test_disabled_profile_uses_only_base_rule(self) -> None:
         self.assertEqual(len(staged_rules("value", self.rule, self.config)), 1)
 
+    def test_manual_cloud_rule_uses_same_staged_relaxation(self) -> None:
+        stages = staged_rules("cloud_manual", self.rule, self.config)
+        self.assertEqual(
+            [stage[1] for stage in stages],
+            ["基準条件", "日足のみ緩和", "日足・週足を緩和"],
+        )
+        self.assertEqual(self.values(stages[-1][2])["monthly.rsi_14"], 20)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,11 @@ create table if not exists public.screening_preferences (
   expectation_genre_id text,
   expectation_manual_logic text not null default 'all' check (expectation_manual_logic in ('all', 'any')),
   expectation_manual_conditions jsonb not null default '[]'::jsonb,
+  trade_direction text not null default 'long' check (trade_direction in ('long', 'short')),
+  expectation_evaluation_mode text not null default 'condition_exit'
+    check (expectation_evaluation_mode in ('condition_exit', 'period_end', 'within_period_up', 'target_return')),
+  target_return_percent double precision not null default 5.0
+    check (target_return_percent > 0 and target_return_percent <= 100),
   updated_at timestamptz not null default now(),
   constraint auto_requires_genre check (mode <> 'auto' or genre_id is not null),
   constraint manual_condition_limit check (jsonb_array_length(manual_conditions) <= 32)
@@ -24,6 +29,17 @@ alter table public.screening_preferences
 add column if not exists expectation_manual_logic text not null default 'all';
 alter table public.screening_preferences
 add column if not exists expectation_manual_conditions jsonb not null default '[]'::jsonb;
+alter table public.screening_preferences
+add column if not exists trade_direction text not null default 'long';
+alter table public.screening_preferences
+add column if not exists expectation_evaluation_mode text not null default 'condition_exit';
+alter table public.screening_preferences
+add column if not exists target_return_percent double precision not null default 5.0;
+alter table public.screening_preferences
+drop constraint if exists screening_preferences_trade_direction_check;
+alter table public.screening_preferences
+add constraint screening_preferences_trade_direction_check
+check (trade_direction in ('long', 'short'));
 alter table public.screening_preferences
 drop constraint if exists manual_condition_limit;
 alter table public.screening_preferences

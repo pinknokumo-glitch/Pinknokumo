@@ -34,6 +34,9 @@ def preference_signature(preference: ScreeningPreference) -> str:
         "expectation_genre_id": preference.expectation_genre_id,
         "expectation_manual_logic": preference.expectation_manual_logic,
         "expectation_manual_conditions": preference.expectation_manual_conditions,
+        "trade_direction": preference.trade_direction,
+        "expectation_evaluation_mode": preference.expectation_evaluation_mode,
+        "target_return_percent": preference.target_return_percent,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:12]
@@ -115,12 +118,28 @@ def run_cloud_batch(
                     outcome["screening_date"], outcome["profile"],
                     outcome["hits"], outcome["comments"],
                     holding_days=members[0].holding_days,
-                    condition_summary=outcome["condition_summary"],
+                    condition_summary=outcome["screening_condition_summary"],
+                    expectation_condition_summary=outcome[
+                        "expectation_condition_summary"
+                    ],
+                    trade_direction=members[0].trade_direction,
+                    evaluation_mode=members[0].expectation_evaluation_mode,
+                    target_return_percent=members[0].target_return_percent,
                 )
                 publisher.publish_run(
-                    outcome["screening_date"], outcome["profile"],
-                    members[0].holding_days, outcome["condition_summary"],
+                    outcome["screening_date"],
+                    outcome["profile"],
+                    members[0].holding_days,
+                    outcome["screening_condition_summary"],
                     len(outcome["hits"]),
+                    expectation_condition_summary=outcome[
+                        "expectation_condition_summary"
+                    ],
+                    trade_direction=members[0].trade_direction,
+                    evaluation_mode=members[0].expectation_evaluation_mode,
+                    target_return_percent=members[0].target_return_percent,
+                    relaxation_label=outcome["relaxation_label"],
+                    relaxation_counts=outcome["relaxation_counts"],
                 )
                 published_users += 1
             except Exception as error:
@@ -135,6 +154,11 @@ def run_cloud_batch(
             "holding_days": members[0].holding_days,
             "hit_count": len(outcome["hits"]),
             "profile": outcome["profile"],
+            "trade_direction": members[0].trade_direction,
+            "evaluation_mode": members[0].expectation_evaluation_mode,
+            "target_return_percent": members[0].target_return_percent,
+            "relaxation_label": outcome["relaxation_label"],
+            "relaxation_counts": outcome["relaxation_counts"],
             "backtest_requested_count": outcome["backtest_requested_count"],
             "backtest_reused_count": outcome["backtest_reused_count"],
         })
@@ -180,7 +204,9 @@ def _compute_group(
     hits: list[dict[str, object]] = []
     effective_rule = base_rule
     effective_profile = f"cloud_{signature}"
-    for stage_index, (_, _, stage_rule) in enumerate(
+    relaxation_label = "基準条件"
+    relaxation_counts: list[dict[str, object]] = []
+    for stage_index, (_, stage_label, stage_rule) in enumerate(
         staged_rules(base_profile, base_rule, resolved.get("auto_relaxation"))
     ):
         stage_profile = f"cloud_{signature}_{stage_index}"
@@ -196,8 +222,13 @@ def _compute_group(
                     "company_name": company_names.get(code),
                     "expectation_score": None,
                 })
+        relaxation_counts.append({
+            "stage": stage_label,
+            "hit_count": len(hits),
+        })
         effective_profile = stage_profile
         effective_rule = stage_rule
+        relaxation_label = stage_label
         if hits:
             break
     hits = hits[:max_hits_per_group]
@@ -218,9 +249,13 @@ def _compute_group(
                 database, indicator_config, backtest_config, scoring_config
             ).run(
                 effective_profile,
-                expectation_rule,
+                effective_rule,
                 preference.holding_days,
                 codes=missing_codes,
+                exit_rule=expectation_rule,
+                position_side=preference.trade_direction,
+                evaluation_mode=preference.expectation_evaluation_mode,
+                target_return_percent=preference.target_return_percent,
             )
         with database.connect() as connection:
             screener = Screener(
@@ -232,6 +267,12 @@ def _compute_group(
             for hit in hits:
                 code = str(hit["code"])
                 result = repository.latest_backtest_result(code, effective_profile)
+                if result:
+                    hit["outcome_probability_percent"] = (
+                        result.get("summary", {}).get(
+                            "outcome_probability_percent"
+                        )
+                    )
                 backtest_comment = (
                     str(result["comment"])
                     if result and result.get("comment")
@@ -246,9 +287,14 @@ def _compute_group(
         "profile": effective_profile,
         "hits": hits,
         "comments": comments,
-        "condition_summary": json.dumps(
+        "screening_condition_summary": json.dumps(
+            effective_rule, ensure_ascii=False, sort_keys=True
+        ),
+        "expectation_condition_summary": json.dumps(
             expectation_rule, ensure_ascii=False, sort_keys=True
         ),
+        "relaxation_label": relaxation_label,
+        "relaxation_counts": relaxation_counts,
         "backtest_requested_count": backtest_requested_count,
         "backtest_reused_count": backtest_reused_count,
     }

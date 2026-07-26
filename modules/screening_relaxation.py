@@ -13,7 +13,8 @@ def staged_rules(
     """Return the base rule followed by configured cumulative relaxation stages."""
     stages = [(profile_name, "基準条件", deepcopy(dict(base_rule)))]
     config = relaxation_config or {}
-    if profile_name not in (config.get("enabled_profiles") or []):
+    enabled_profiles = config.get("enabled_profiles") or []
+    if profile_name not in enabled_profiles and profile_name != "cloud_manual":
         return stages
 
     for stage in config.get("stages") or []:

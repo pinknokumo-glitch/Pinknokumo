@@ -31,6 +31,11 @@ data class CloudScreeningResult(
     val chartUrl: String?,
     val holdingDays: Int?,
     val conditionSummary: String?,
+    val expectationConditionSummary: String?,
+    val tradeDirection: String,
+    val evaluationMode: String,
+    val targetReturnPercent: Double,
+    val outcomeProbabilityPercent: Double?,
 )
 data class CloudScreeningRun(
     val screeningDate: String,
@@ -38,8 +43,15 @@ data class CloudScreeningRun(
     val holdingDays: Int,
     val hitCount: Int,
     val conditionSummary: String?,
+    val expectationConditionSummary: String?,
+    val tradeDirection: String,
+    val evaluationMode: String,
+    val targetReturnPercent: Double,
+    val relaxationLabel: String?,
+    val relaxationCounts: List<RelaxationCount>,
     val updatedAt: Instant,
 )
+data class RelaxationCount(val stage: String, val hitCount: Int)
 data class RequestedBacktest(
     val code: String,
     val status: String,
@@ -59,6 +71,9 @@ data class CloudPreference(
     val expectationGenreId: String? = null,
     val expectationManualLogic: String = "all",
     val expectationManualConditions: List<ManualCondition> = emptyList(),
+    val tradeDirection: String = "long",
+    val evaluationMode: String = "condition_exit",
+    val targetReturnPercent: Double = 5.0,
 )
 
 class SupabaseClient(
@@ -135,7 +150,8 @@ class SupabaseClient(
             "/rest/v1/screening_preferences?user_id=eq.${session.userId}" +
                 "&select=mode,genre_id,manual_logic,manual_conditions,holding_days," +
                 "expectation_mode,expectation_genre_id,expectation_manual_logic," +
-                "expectation_manual_conditions&limit=1",
+                "expectation_manual_conditions,trade_direction," +
+                "expectation_evaluation_mode,target_return_percent&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
@@ -160,6 +176,11 @@ class SupabaseClient(
                 val item = expectationConditions.getJSONObject(index)
                 ManualCondition(item.getString("field"), item.getString("operator"), item.getDouble("value"))
             },
+            tradeDirection = row.optString("trade_direction", "long"),
+            evaluationMode = row.optString(
+                "expectation_evaluation_mode", "condition_exit"
+            ),
+            targetReturnPercent = row.optDouble("target_return_percent", 5.0),
         )
     }
 
@@ -169,6 +190,17 @@ class SupabaseClient(
         require(preference.manualConditions.size <= 32) { "ソート条件は32件までです" }
         require(preference.expectationManualConditions.size <= 32) { "期待値条件は32件までです" }
         require(preference.holdingDays in 1..250) { "保有営業日数は1～250日で入力してください" }
+        require(preference.tradeDirection in setOf("long", "short")) {
+            "売買方向が不正です"
+        }
+        require(
+            preference.evaluationMode in setOf(
+                "condition_exit", "period_end", "within_period_up", "target_return"
+            )
+        ) { "期待値の判定方式が不正です" }
+        require(preference.targetReturnPercent > 0.0 &&
+            preference.targetReturnPercent <= 100.0
+        ) { "目標騰落率は0より大きく100以下で入力してください" }
         val conditions = JSONArray().apply {
             preference.manualConditions.forEach { item ->
                 put(JSONObject().put("field", item.field).put("operator", item.operator).put("value", item.value))
@@ -190,6 +222,9 @@ class SupabaseClient(
             .put("expectation_genre_id", preference.expectationGenreId ?: JSONObject.NULL)
             .put("expectation_manual_logic", preference.expectationManualLogic)
             .put("expectation_manual_conditions", expectationConditions)
+            .put("trade_direction", preference.tradeDirection)
+            .put("expectation_evaluation_mode", preference.evaluationMode)
+            .put("target_return_percent", preference.targetReturnPercent)
             .put("updated_at", Instant.now().toString())
         requestArray(
             "POST", "/rest/v1/screening_preferences?on_conflict=user_id", payload, session.accessToken,
@@ -203,7 +238,8 @@ class SupabaseClient(
             "GET",
             "/rest/v1/screening_results?user_id=eq.${session.userId}" +
                 "&select=screening_date,profile_name,position,code,company_name,expectation_score,comment,chart_url" +
-                ",holding_days,condition_summary" +
+                ",holding_days,condition_summary,expectation_condition_summary,trade_direction" +
+                ",expectation_evaluation_mode,target_return_percent,outcome_probability_percent" +
                 "&order=screening_date.desc,position.asc&limit=$safeLimit",
             token = session.accessToken,
         )
@@ -223,6 +259,17 @@ class SupabaseClient(
                     chartUrl = row.optString("chart_url").takeIf { it.isNotEmpty() },
                     holdingDays = row.optInt("holding_days").takeIf { !row.isNull("holding_days") },
                     conditionSummary = row.optString("condition_summary").takeIf { it.isNotEmpty() },
+                    expectationConditionSummary = row.optString(
+                        "expectation_condition_summary"
+                    ).takeIf { it.isNotEmpty() },
+                    tradeDirection = row.optString("trade_direction", "long"),
+                    evaluationMode = row.optString(
+                        "expectation_evaluation_mode", "condition_exit"
+                    ),
+                    targetReturnPercent = row.optDouble("target_return_percent", 5.0),
+                    outcomeProbabilityPercent = row.optDouble(
+                        "outcome_probability_percent"
+                    ).takeUnless { it.isNaN() },
                 )
             }
     }
@@ -232,17 +279,36 @@ class SupabaseClient(
             "GET",
             "/rest/v1/screening_runs?user_id=eq.${session.userId}" +
                 "&select=screening_date,profile_name,holding_days,hit_count,condition_summary,updated_at" +
+                ",expectation_condition_summary,trade_direction,relaxation_label,relaxation_counts" +
+                ",expectation_evaluation_mode,target_return_percent" +
                 "&order=updated_at.desc&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
         val row = response.getJSONObject(0)
+        val relaxationCounts = row.optJSONArray("relaxation_counts") ?: JSONArray()
         return CloudScreeningRun(
             screeningDate = row.getString("screening_date"),
             profile = row.getString("profile_name"),
             holdingDays = row.getInt("holding_days"),
             hitCount = row.getInt("hit_count"),
             conditionSummary = row.optString("condition_summary").takeIf { it.isNotEmpty() },
+            expectationConditionSummary = row.optString(
+                "expectation_condition_summary"
+            ).takeIf { it.isNotEmpty() },
+            tradeDirection = row.optString("trade_direction", "long"),
+            evaluationMode = row.optString(
+                "expectation_evaluation_mode", "condition_exit"
+            ),
+            targetReturnPercent = row.optDouble("target_return_percent", 5.0),
+            relaxationLabel = row.optString("relaxation_label").takeIf { it.isNotEmpty() },
+            relaxationCounts = (0 until relaxationCounts.length()).map { index ->
+                val item = relaxationCounts.getJSONObject(index)
+                RelaxationCount(
+                    stage = item.optString("stage"),
+                    hitCount = item.optInt("hit_count"),
+                )
+            },
             updatedAt = Instant.parse(row.getString("updated_at")),
         )
     }

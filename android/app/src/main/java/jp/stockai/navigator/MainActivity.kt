@@ -681,6 +681,17 @@ private fun DataUpdateStatusScreen(session: SupabaseSession, onBack: () -> Unit)
                 } ?: "配信該当銘柄数: 未判定"
             )
             run?.let { Text("配信結果更新: ${formatJst(it.updatedAt)}") }
+            run?.let {
+                Text("売買方向: ${tradeDirectionLabel(it.tradeDirection)}")
+                Text("使用した緩和: ${it.relaxationLabel ?: "基準条件"}")
+                if (it.relaxationCounts.isNotEmpty()) {
+                    Text(
+                        "段階別件数: " + it.relaxationCounts.joinToString(" / ") { count ->
+                            "${count.stage} ${count.hitCount}件"
+                        }
+                    )
+                }
+            }
             val hasPoolProblem = pool?.usable == false
             Text(
                 "障害状況: ${when {
@@ -716,7 +727,9 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.13.1",
+        "バージョン" to "StockAI Navigator 0.15.0",
+        "0.15.0" to "期待値を条件到達、期間末の騰落、期間内の価格改善、目標騰落率到達から選択でき、達成確率を表示。",
+        "0.14.0" to "条件に以下・以上を追加。入口と出口を対にした買い→売り／空売り→買い戻しの条件到達型バックテストに対応。",
         "0.13.1" to "配信結果の0件を正常終了として明示し、結果更新時刻を日本時間で表示。該当件数と結果詳細の不一致も検知。",
         "0.13.0" to "全市場の対象数・判定済み数・候補数・失敗数・カバー率・利用可否をクラウド運用状況へ追加。",
         "0.12.5" to "保存済み通知設定をアプリ起動時に自動再予約し、更新後の手動再保存を不要化。",
@@ -933,6 +946,7 @@ private fun ConditionFieldsPanel(
     title: String,
     fields: List<ManualField>,
     values: MutableMap<String, String>,
+    operators: MutableMap<String, String>,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
@@ -947,10 +961,31 @@ private fun ConditionFieldsPanel(
             }
             if (expanded) {
                 fields.forEach { field ->
+                    val selectedOperator = operators[field.field] ?: field.defaultOperator
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilterChip(
+                            selected = selectedOperator == "<=",
+                            onClick = { operators[field.field] = "<=" },
+                            label = { Text("以下（≤）") },
+                        )
+                        FilterChip(
+                            selected = selectedOperator == ">=",
+                            onClick = { operators[field.field] = ">=" },
+                            label = { Text("以上（≥）") },
+                        )
+                    }
                     OutlinedTextField(
                         value = values[field.field] ?: "",
                         onValueChange = { values[field.field] = it },
-                        label = { Text("${field.label} ${field.defaultOperator}") },
+                        label = {
+                            Text(
+                                "${field.label} " +
+                                    if (selectedOperator == "<=") "以下" else "以上"
+                            )
+                        },
                         supportingText = { Text("範囲 ${field.min}〜${field.max}") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -998,9 +1033,23 @@ private fun DeliveryResultsScreen(
                     Text("${latest.screeningDate} / 該当${latest.hitCount}件")
                     Text("処理状態: ${screeningRunStatus(latest.hitCount)}")
                     Text("結果更新: ${formatJst(latest.updatedAt)}")
-                    Text("期待値期間: ${latest.holdingDays}営業日")
+                    Text("売買方向: ${tradeDirectionLabel(latest.tradeDirection)}")
+                    Text("期待値判定: ${evaluationModeLabel(latest.evaluationMode, latest.targetReturnPercent)}")
+                    Text("検証期間: ${latest.holdingDays}営業日以内")
+                    Text("使用した緩和: ${latest.relaxationLabel ?: "基準条件"}")
                     latest.conditionSummary?.let {
-                        Text("期待値の検証条件: ${formatConditionSummary(it)}")
+                        Text("入口（ソート）条件: ${formatConditionSummary(it)}")
+                    }
+                    latest.expectationConditionSummary?.let {
+                        Text("出口（期待値）条件: ${formatConditionSummary(it)}")
+                    }
+                    if (latest.relaxationCounts.isNotEmpty()) {
+                        Text(
+                            "段階別件数: " +
+                                latest.relaxationCounts.joinToString(" / ") {
+                                    "${it.stage} ${it.hitCount}件"
+                                }
+                        )
                     }
                     Spacer(Modifier.height(12.dp))
                 }
@@ -1032,9 +1081,19 @@ private fun DeliveryResultsScreen(
                     headlineContent = { Text("${result.position}. ${result.code}$company") },
                     supportingContent = {
                         Column {
-                            Text("期待値 $score / ${result.holdingDays ?: "-"}営業日")
+                            Text("期待値スコア $score")
+                            result.outcomeProbabilityPercent?.let {
+                                Text(
+                                    "${evaluationModeLabel(result.evaluationMode, result.targetReturnPercent)}の確率 " +
+                                        String.format("%.1f%%", it)
+                                )
+                            }
+                            Text("検証期間 ${result.holdingDays ?: "-"}営業日以内")
                             result.conditionSummary?.let {
-                                Text("検証条件: ${formatConditionSummary(it)}")
+                                Text("入口条件: ${formatConditionSummary(it)}")
+                            }
+                            result.expectationConditionSummary?.let {
+                                Text("出口条件: ${formatConditionSummary(it)}")
                             }
                             result.comment?.let { Text(it) }
                         }
@@ -1166,8 +1225,15 @@ private fun ScreeningScreen(
     var expectationMode by remember { mutableStateOf("auto") }
     var expectationGenreId by remember { mutableStateOf<String?>(null) }
     var holdingDays by remember { mutableStateOf("60") }
+    var tradeDirection by remember { mutableStateOf("long") }
+    var evaluationMode by remember { mutableStateOf("condition_exit") }
+    var targetReturnPercent by remember { mutableStateOf("5.0") }
     val manualValues = remember { mutableStateMapOf<String, String>() }
+    val manualOperators = remember { mutableStateMapOf<String, String>() }
     val expectationManualValues = remember { mutableStateMapOf<String, String>() }
+    val expectationManualOperators = remember {
+        mutableStateMapOf<String, String>()
+    }
     var hits by remember { mutableStateOf<List<ScreeningHit>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var localApiAvailable by remember { mutableStateOf(true) }
@@ -1258,22 +1324,41 @@ private fun ScreeningScreen(
         require(resolvedHoldingDays in 1..250) { "保有営業日数は1～250日で入力してください" }
         val conditions = loaded?.manualFields?.mapNotNull { field ->
             manualValues[field.field]?.toDoubleOrNull()?.let { value ->
-                ManualCondition(field.field, field.defaultOperator, value)
+                ManualCondition(
+                    field.field,
+                    manualOperators[field.field] ?: field.defaultOperator,
+                    value,
+                )
             }
         }.orEmpty()
         val expectationConditions = loaded?.manualFields?.mapNotNull { field ->
             expectationManualValues[field.field]?.toDoubleOrNull()?.let { value ->
-                ManualCondition(field.field, field.defaultOperator, value)
+                ManualCondition(
+                    field.field,
+                    expectationManualOperators[field.field] ?: field.defaultOperator,
+                    value,
+                )
             }
         }.orEmpty()
+        val resolvedTarget = targetReturnPercent.toDoubleOrNull()
+            ?: throw IllegalArgumentException("目標騰落率を入力してください")
+        require(resolvedTarget > 0.0 && resolvedTarget <= 100.0) {
+            "目標騰落率は0より大きく100以下で入力してください"
+        }
         return CloudPreference(
-            mode, genreId, "all",
-            if (mode == "manual") conditions else emptyList(),
-            resolvedHoldingDays,
-            expectationMode,
-            expectationGenreId,
-            "all",
-            if (expectationMode == "manual") expectationConditions else emptyList(),
+            mode = mode,
+            genreId = genreId,
+            manualLogic = "all",
+            manualConditions = if (mode == "manual") conditions else emptyList(),
+            holdingDays = resolvedHoldingDays,
+            expectationMode = expectationMode,
+            expectationGenreId = expectationGenreId,
+            expectationManualLogic = "all",
+            expectationManualConditions =
+                if (expectationMode == "manual") expectationConditions else emptyList(),
+            tradeDirection = tradeDirection,
+            evaluationMode = evaluationMode,
+            targetReturnPercent = resolvedTarget,
         )
     }
 
@@ -1396,15 +1481,22 @@ private fun ScreeningScreen(
                     genreId = saved.genreId
                     holdingDays = saved.holdingDays.toString()
                     manualValues.clear()
+                    manualOperators.clear()
                     saved.manualConditions.forEach {
                         manualValues[it.field] = it.value.toString()
+                        manualOperators[it.field] = it.operator
                     }
                     expectationMode = saved.expectationMode
                     expectationGenreId = saved.expectationGenreId
                     expectationManualValues.clear()
+                    expectationManualOperators.clear()
                     saved.expectationManualConditions.forEach {
                         expectationManualValues[it.field] = it.value.toString()
+                        expectationManualOperators[it.field] = it.operator
                     }
+                    tradeDirection = saved.tradeDirection
+                    evaluationMode = saved.evaluationMode
+                    targetReturnPercent = saved.targetReturnPercent.toString()
                 }
             }
     }
@@ -1421,7 +1513,11 @@ private fun ScreeningScreen(
                 } else {
                     val conditions = loaded.manualFields.mapNotNull { field ->
                         manualValues[field.field]?.toDoubleOrNull()?.let { value ->
-                            ManualCondition(field.field, field.defaultOperator, value)
+                            ManualCondition(
+                                field.field,
+                                manualOperators[field.field] ?: field.defaultOperator,
+                                value,
+                            )
                         }
                     }
                     if (conditions.isEmpty()) emptyList() else ApiClient().manualPreview(conditions)
@@ -1541,6 +1637,7 @@ private fun ScreeningScreen(
                                 label,
                                 options?.manualFields.orEmpty().filter { it.field.startsWith("$prefix.") },
                                 manualValues,
+                                manualOperators,
                                 expandedGroups["sort_$prefix"] == true,
                             ) {
                                 expandedGroups["sort_$prefix"] =
@@ -1554,6 +1651,7 @@ private fun ScreeningScreen(
                             "ファンダメンタル",
                             options?.manualFields.orEmpty().filter { it.category == "fundamental" },
                             manualValues,
+                            manualOperators,
                             expandedGroups["sort_fundamental"] == true,
                         ) {
                             expandedGroups["sort_fundamental"] =
@@ -1579,16 +1677,81 @@ private fun ScreeningScreen(
                 }
             }
             if (settingsPage in setOf("expect_auto", "expect_manual")) item {
-                OutlinedTextField(
-                    value = holdingDays,
-                    onValueChange = { holdingDays = it.filter(Char::isDigit).take(3) },
-                    label = { Text("期待値の保有営業日数") },
-                    supportingText = {
-                        Text("期待値条件が成立した翌営業日から、この日数後までの成績で算出します（1～250日）。")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("売買方向", style = MaterialTheme.typography.titleMedium)
+                    FilterChip(
+                        selected = tradeDirection == "long",
+                        onClick = { tradeDirection = "long" },
+                        label = { Text("低い時に買う → 高い時に売る") },
+                    )
+                    FilterChip(
+                        selected = tradeDirection == "short",
+                        onClick = { tradeDirection = "short" },
+                        label = { Text("高い時に売る → 低い時に買い戻す") },
+                    )
+                    Text(
+                        if (tradeDirection == "long") {
+                            "ソート条件を買いの入口、期待値条件を売りの出口として検証します。"
+                        } else {
+                            "ソート条件を空売りの入口、期待値条件を買い戻しの出口として検証します。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text("期待値の判定方式", style = MaterialTheme.typography.titleMedium)
+                    FilterChip(
+                        selected = evaluationMode == "period_end",
+                        onClick = { evaluationMode = "period_end" },
+                        label = { Text("期間終了時に値上がり／値下がり") },
+                    )
+                    FilterChip(
+                        selected = evaluationMode == "within_period_up",
+                        onClick = { evaluationMode = "within_period_up" },
+                        label = { Text("期間内に配信価格を一度でも上回る／下回る") },
+                    )
+                    FilterChip(
+                        selected = evaluationMode == "target_return",
+                        onClick = { evaluationMode = "target_return" },
+                        label = { Text("期間内に目標騰落率へ到達") },
+                    )
+                    FilterChip(
+                        selected = evaluationMode == "condition_exit",
+                        onClick = { evaluationMode = "condition_exit" },
+                        label = { Text("期待値条件へ到達") },
+                    )
+                    if (evaluationMode == "target_return") {
+                        OutlinedTextField(
+                            value = targetReturnPercent,
+                            onValueChange = {
+                                targetReturnPercent = it.filter { char ->
+                                    char.isDigit() || char == '.'
+                                }.take(6)
+                            },
+                            label = { Text("目標騰落率（%）") },
+                            supportingText = {
+                                Text("買いは値上がり率、空売りは値下がり率として判定します。")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+                    if (tradeDirection == "short") {
+                        Text(
+                            "空売り可能銘柄の制限、貸株料、逆日歩、売買手数料、スリッページは現在の参考計算に含みません。",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    OutlinedTextField(
+                        value = holdingDays,
+                        onValueChange = { holdingDays = it.filter(Char::isDigit).take(3) },
+                        label = { Text("検証期間（営業日）") },
+                        supportingText = {
+                            Text("選択した結果が何日以内に起きるかを調べます（1～250日）。")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
             }
             if (settingsPage == "expect_auto") {
                 options?.genres?.forEach { genre ->
@@ -1630,6 +1793,7 @@ private fun ScreeningScreen(
                                 label,
                                 options?.manualFields.orEmpty().filter { it.field.startsWith("$prefix.") },
                                 expectationManualValues,
+                                expectationManualOperators,
                                 expandedGroups["expect_$prefix"] == true,
                             ) {
                                 expandedGroups["expect_$prefix"] =
@@ -1643,6 +1807,7 @@ private fun ScreeningScreen(
                             "ファンダメンタル",
                             options?.manualFields.orEmpty().filter { it.category == "fundamental" },
                             expectationManualValues,
+                            expectationManualOperators,
                             expandedGroups["expect_fundamental"] == true,
                         ) {
                             expandedGroups["expect_fundamental"] =
@@ -2291,7 +2456,13 @@ private fun formatConditionSummary(summary: String): String {
         val parts = (0 until conditions.length()).map { index ->
             val condition = conditions.getJSONObject(index)
             val field = condition.optString("field")
-            val operator = condition.optString("operator")
+            val operator = when (condition.optString("operator")) {
+                "<=" -> "以下"
+                ">=" -> "以上"
+                "<" -> "未満"
+                ">" -> "超"
+                else -> condition.optString("operator")
+            }
             val right = if (condition.has("value_from")) {
                 val source = condition.optString("value_from")
                 labels[source] ?: readableIndicatorName(source)
@@ -2313,6 +2484,21 @@ private fun formatJst(instant: Instant): String =
 private val JAPAN_ZONE: ZoneId = ZoneId.of("Asia/Tokyo")
 private val JST_DATE_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss 'JST'")
+
+private fun tradeDirectionLabel(direction: String): String =
+    if (direction == "short") {
+        "高い時に売る → 低い時に買い戻す"
+    } else {
+        "低い時に買う → 高い時に売る"
+    }
+
+private fun evaluationModeLabel(mode: String, targetReturnPercent: Double): String =
+    when (mode) {
+        "period_end" -> "期間終了時の値上がり／値下がり"
+        "within_period_up" -> "期間内に配信価格を上回る／下回る"
+        "target_return" -> "目標騰落率${String.format("%.1f", targetReturnPercent)}%到達"
+        else -> "期待値条件への到達"
+    }
 
 private fun readableIndicatorName(field: String): String {
     val prefix = when {

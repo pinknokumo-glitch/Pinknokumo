@@ -28,6 +28,10 @@ class BatchBacktester:
         holding_days: int,
         limit: int | None = None,
         codes: list[str] | None = None,
+        exit_rule: Mapping[str, object] | None = None,
+        position_side: str = "long",
+        evaluation_mode: str = "condition_exit",
+        target_return_percent: float = 5.0,
     ) -> dict[str, object]:
         if codes is None:
             with self.db.connect() as conn:
@@ -59,11 +63,22 @@ class BatchBacktester:
                     )
                 if prices.empty:
                     continue
-                trades = self.backtester.run(prices, rule, holding_days, frames, financials)
+                trades = self.backtester.run(
+                    prices, rule, holding_days, frames, financials,
+                    exit_rule=exit_rule,
+                    position_side=position_side,
+                    evaluation_mode=evaluation_mode,
+                    target_return_percent=target_return_percent,
+                )
                 summary = self.backtester.summarize(trades)
                 expectation = self.scorer.score(summary)
                 result = {
                     "code": code, "profile": profile_name, "holding_days": holding_days,
+                    "position_side": position_side,
+                    "evaluation_mode": evaluation_mode,
+                    "target_return_percent": target_return_percent,
+                    "entry_rule": rule,
+                    "exit_rule": exit_rule,
                     "summary": summary, "expectation": expectation,
                     "comment": self.commentary.backtest_comment(summary, expectation),
                 }

@@ -11,9 +11,12 @@ class ExpectationScorer:
         if not summary["trade_count"]:
             return {"score": 0.0, "grade": "N/A", "comment": "バックテスト対象の取引がありません。"}
         targets, weights = self.config["targets"], self.config["weights"]
+        success_rate = summary.get("outcome_probability_percent")
+        if success_rate is None:
+            success_rate = summary["win_rate_percent"]
         components = {
             "average_return": self._cap(float(summary["average_return_percent"]) / float(targets["average_return_percent"]) * 100),
-            "win_rate": self._cap(float(summary["win_rate_percent"]) / float(targets["win_rate_percent"]) * 100),
+            "win_rate": self._cap(float(success_rate) / float(targets["win_rate_percent"]) * 100),
             "max_drawdown": self._cap(abs(float(targets["max_drawdown_percent"])) / abs(float(summary["max_drawdown_percent"])) * 100) if summary["max_drawdown_percent"] else 100.0,
             "sample_size": self._cap(float(summary["trade_count"]) / float(targets["sample_size"]) * 100),
         }
@@ -24,4 +27,3 @@ class ExpectationScorer:
     @staticmethod
     def _cap(value: float) -> float:
         return max(0.0, min(100.0, value))
-

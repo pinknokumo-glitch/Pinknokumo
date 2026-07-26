@@ -131,6 +131,57 @@ class CloudPreferenceTestCase(unittest.TestCase):
                 self.options,
             )
 
+    def test_trade_direction_is_validated_and_defaults_to_long(self) -> None:
+        default = CloudPreferenceClient.validate(
+            {"mode": "auto", "genre_id": "value"}, self.options
+        )
+        self.assertEqual(default.trade_direction, "long")
+        short = CloudPreferenceClient.validate(
+            {
+                "mode": "auto",
+                "genre_id": "value",
+                "trade_direction": "short",
+            },
+            self.options,
+        )
+        self.assertEqual(short.trade_direction, "short")
+        with self.assertRaises(ValueError):
+            CloudPreferenceClient.validate(
+                {
+                    "mode": "auto",
+                    "genre_id": "value",
+                    "trade_direction": "invalid",
+                },
+                self.options,
+            )
+
+    def test_expectation_evaluation_mode_and_target_are_validated(self) -> None:
+        default = CloudPreferenceClient.validate(
+            {"mode": "auto", "genre_id": "value"}, self.options
+        )
+        self.assertEqual(default.expectation_evaluation_mode, "condition_exit")
+        self.assertEqual(default.target_return_percent, 5.0)
+        target = CloudPreferenceClient.validate(
+            {
+                "mode": "auto",
+                "genre_id": "value",
+                "expectation_evaluation_mode": "target_return",
+                "target_return_percent": 8.5,
+            },
+            self.options,
+        )
+        self.assertEqual(target.expectation_evaluation_mode, "target_return")
+        self.assertEqual(target.target_return_percent, 8.5)
+        with self.assertRaises(ValueError):
+            CloudPreferenceClient.validate(
+                {
+                    "mode": "auto",
+                    "genre_id": "value",
+                    "expectation_evaluation_mode": "unknown",
+                },
+                self.options,
+            )
+
     def test_expectation_rule_can_differ_from_screening_rule(self) -> None:
         preference = CloudPreferenceClient.validate({
             "mode": "auto",
