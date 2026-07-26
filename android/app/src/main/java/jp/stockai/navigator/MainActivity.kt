@@ -45,6 +45,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private val StockAiDarkColors = darkColorScheme(
     primary = Color(0xFF49E7E0),
@@ -672,7 +675,12 @@ private fun DataUpdateStatusScreen(session: SupabaseSession, onBack: () -> Unit)
             }
             Text("夕方処理状態: ${pool?.status ?: "未取得"}")
             Text("配信判定最終日: ${run?.screeningDate ?: "未実行"}")
-            Text("配信該当銘柄数: ${run?.hitCount ?: 0}件")
+            Text(
+                run?.let {
+                    "配信該当銘柄数: ${it.hitCount}件（${screeningRunStatus(it.hitCount)}）"
+                } ?: "配信該当銘柄数: 未判定"
+            )
+            run?.let { Text("配信結果更新: ${formatJst(it.updatedAt)}") }
             val hasPoolProblem = pool?.usable == false
             Text(
                 "障害状況: ${when {
@@ -708,7 +716,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.13.0",
+        "バージョン" to "StockAI Navigator 0.13.1",
+        "0.13.1" to "配信結果の0件を正常終了として明示し、結果更新時刻を日本時間で表示。該当件数と結果詳細の不一致も検知。",
         "0.13.0" to "全市場の対象数・判定済み数・候補数・失敗数・カバー率・利用可否をクラウド運用状況へ追加。",
         "0.12.5" to "保存済み通知設定をアプリ起動時に自動再予約し、更新後の手動再保存を不要化。",
         "0.12.4" to "通知権限がない状態を成功扱いしないよう修正し、クラウド通知処理をネットワーク接続時だけ実行。",
@@ -987,6 +996,8 @@ private fun DeliveryResultsScreen(
             run?.let { latest ->
                 item {
                     Text("${latest.screeningDate} / 該当${latest.hitCount}件")
+                    Text("処理状態: ${screeningRunStatus(latest.hitCount)}")
+                    Text("結果更新: ${formatJst(latest.updatedAt)}")
                     Text("期待値期間: ${latest.holdingDays}営業日")
                     latest.conditionSummary?.let {
                         Text("期待値の検証条件: ${formatConditionSummary(it)}")
@@ -998,7 +1009,21 @@ private fun DeliveryResultsScreen(
                 item { Text("配信結果を取得できません: $it", color = MaterialTheme.colorScheme.error) }
             }
             if (results.isEmpty() && error == null) {
-                item { Text(if (run == null) "配信結果はまだありません" else "該当銘柄はありません") }
+                item {
+                    val message = when {
+                        run == null -> "配信処理はまだ実行されていません"
+                        run?.hitCount == 0 -> "処理は正常に完了しました。現在の条件に一致する銘柄は0件です"
+                        else -> "該当件数と結果詳細が一致しません。更新を押して再取得してください"
+                    }
+                    Text(
+                        message,
+                        color = if ((run?.hitCount ?: 0) > 0) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                }
             }
             items(results) { result ->
                 val company = result.companyName?.let { " / $it" } ?: ""
@@ -2278,6 +2303,16 @@ private fun formatConditionSummary(summary: String): String {
         parts.joinToString(if (logic == "all") " かつ " else " または ")
     }.getOrDefault(summary)
 }
+
+private fun screeningRunStatus(hitCount: Int): String =
+    if (hitCount == 0) "正常終了・条件一致0件" else "正常終了"
+
+private fun formatJst(instant: Instant): String =
+    JST_DATE_TIME_FORMATTER.format(instant.atZone(JAPAN_ZONE))
+
+private val JAPAN_ZONE: ZoneId = ZoneId.of("Asia/Tokyo")
+private val JST_DATE_TIME_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss 'JST'")
 
 private fun readableIndicatorName(field: String): String {
     val prefix = when {
