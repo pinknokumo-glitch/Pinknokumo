@@ -19,6 +19,7 @@ from modules.cloud_batch import preference_signature  # noqa: E402
 from modules.cloud_preferences import (  # noqa: E402
     CloudPreferenceClient,
     apply_expectation_preference,
+    apply_preference,
 )
 from modules.database import Database  # noqa: E402
 from modules.repository import StockRepository  # noqa: E402
@@ -77,10 +78,14 @@ def main() -> int:
         path = f"/rest/v1/backtest_requests?id=eq.{quote(str(request_id))}"
         try:
             preference = preferences[user_id]
-            resolved, expectation_profile = apply_expectation_preference(
+            entry_config, entry_profile = apply_preference(
                 preference, options, screening
             )
-            rule = resolved["profiles"][expectation_profile]
+            exit_config, expectation_profile = apply_expectation_preference(
+                preference, options, screening
+            )
+            entry_rule = entry_config["profiles"][entry_profile]
+            exit_rule = exit_config["profiles"][expectation_profile]
             profile = f"requested_{preference_signature(preference)}"
             request(url, key, "PATCH", path, {"status": "processing"})
             BatchBacktester(
@@ -88,7 +93,16 @@ def main() -> int:
                 load_yaml("indicators.yaml"),
                 load_yaml("backtest.yaml"),
                 load_yaml("scoring.yaml"),
-            ).run(profile, rule, preference.holding_days, codes=[code])
+            ).run(
+                profile,
+                entry_rule,
+                preference.holding_days,
+                codes=[code],
+                exit_rule=exit_rule,
+                position_side=preference.trade_direction,
+                evaluation_mode=preference.expectation_evaluation_mode,
+                target_return_percent=preference.target_return_percent,
+            )
             with database.connect() as connection:
                 result = StockRepository(connection).latest_backtest_result(code, profile)
                 prices = pd.read_sql_query(
@@ -106,7 +120,12 @@ def main() -> int:
                         {"date": str(row.trade_date), "close": float(row.close)}
                         for row in prices.itertuples()
                     ],
-                    "condition_summary": rule,
+                    "entry_condition_summary": entry_rule,
+                    "exit_condition_summary": exit_rule,
+                    "trade_direction": preference.trade_direction,
+                    "expectation_evaluation_mode":
+                        preference.expectation_evaluation_mode,
+                    "target_return_percent": preference.target_return_percent,
                 },
                 "error_message": None,
             }

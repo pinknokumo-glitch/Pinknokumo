@@ -49,11 +49,17 @@ Android app. The app imports the returned session without storing the password.
 5. 配信候補は`screening_results`へ保存され、Androidの「最新結果」から
    同じユーザーの最新配信日を確認できます。
 
-The daily cloud batch reads every saved preference. Users with identical genre/manual
-conditions and identical `holding_days` share one screening and backtest calculation,
-while results are written separately for each user. The expectation backtest uses the
-same complete technical/fundamental AND/OR rule as screening, enters at the next
-session's open, and exits after the configured number of trading sessions.
+The daily cloud batch reads every saved preference. Users with identical entry/exit
+conditions, `trade_direction`, expectation evaluation mode, target return, and
+`holding_days` share one calculation, while results
+are written separately for each user. The screening rule is the entry signal and the
+expectation rule can be the exit signal. The user can instead evaluate a favorable
+period-end return, any favorable close within the period, or a target return reached
+within the period. Signals execute at the next session's open to avoid look-ahead
+bias. `holding_days` is the evaluation window, not the only expectation condition.
+Long strategies buy then sell; short strategies sell short then buy to cover.
+The current reference backtest does not model commissions, slippage, borrow fees,
+reverse stock loan fees, short-sale eligibility, or regulatory restrictions.
 
 GitHub Secretsには`SUPABASE_URL`と`SUPABASE_SERVICE_ROLE_KEY`が必要です。
 朝の処理は、アプリから最後に保存された設定行の`user_id`を自動採用します。
@@ -74,7 +80,12 @@ Preference writes remain restricted by RLS.
    the candidate rows and `screening_candidate_runs`, which records universe coverage
    even when the candidate count is zero.
 5. Run `supabase/screening_results.sql` and `supabase/backtest_requests.sql`.
-6. Insert the initial preference while authenticated, or use the dashboard for the first row.
-7. Register the three server values above as GitHub Actions secrets.
+6. Existing projects upgrading to StockAI 0.14.0 must run
+   `supabase/trade_strategy_upgrade.sql` once. The script is rerunnable and preserves
+   existing rows.
+7. Existing projects upgrading to StockAI 0.15.0 must run
+   `supabase/expectation_evaluation_upgrade.sql` once. It is also rerunnable.
+8. Insert the initial preference while authenticated, or use the dashboard for the first row.
+9. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.

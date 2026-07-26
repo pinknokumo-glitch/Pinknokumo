@@ -19,6 +19,9 @@ class Trade:
     return_percent: float
     max_favorable_excursion_percent: float
     max_drawdown_percent: float
+    position_side: str = "long"
+    exit_reason: str = "holding_period"
+    target_reached: bool = False
 
 class Backtester:
     def __init__(self, indicator_config: Mapping[str, object], backtest_config: Mapping[str, object]) -> None:
@@ -30,8 +33,26 @@ class Backtester:
     def run(
         self, prices: pd.DataFrame, rule: Mapping[str, object], holding_days: int,
         timeframe_prices: Mapping[str, pd.DataFrame] | None = None, financials: pd.DataFrame | None = None,
+        exit_rule: Mapping[str, object] | None = None,
+        position_side: str = "long",
+        evaluation_mode: str = "condition_exit",
+        target_return_percent: float = 5.0,
     ) -> list[Trade]:
         self._ensure_supported_rule(rule)
+        if exit_rule is not None:
+            self._ensure_supported_rule(exit_rule)
+        if position_side not in {"long", "short"}:
+            raise ValueError("position_side must be long or short")
+        if evaluation_mode not in {
+            "condition_exit", "period_end", "within_period_up", "target_return"
+        }:
+            raise ValueError("evaluation_mode is invalid")
+        if evaluation_mode == "condition_exit" and exit_rule is None:
+            evaluation_mode = "period_end"
+        if target_return_percent <= 0 or target_return_percent > 100:
+            raise ValueError(
+                "target_return_percent must be greater than 0 and at most 100"
+            )
         computed = self.analyzer.calculate(prices).reset_index(drop=True)
         signal_frame = self._add_timeframe_values(computed, timeframe_prices or {})
         signal_frame = self._add_fundamental_values(signal_frame, financials)
@@ -41,21 +62,89 @@ class Backtester:
             values = self._values_at(signal_frame, signal_index)
             if not self.rules.evaluate(rule, values).matched:
                 continue
-            entry_index, exit_index = signal_index + 1, signal_index + 1 + holding_days
-            entry, exit_row = computed.iloc[entry_index], computed.iloc[exit_index]
+            entry_index = signal_index + 1
+            exit_index = entry_index + holding_days
+            exit_price_field = "close"
+            exit_reason = "holding_period"
+            target_reached = False
+            if evaluation_mode == "condition_exit" and exit_rule is not None:
+                last_exit_signal_index = min(exit_index - 1, len(computed) - 2)
+                for exit_signal_index in range(entry_index, last_exit_signal_index + 1):
+                    exit_values = self._values_at(signal_frame, exit_signal_index)
+                    if self.rules.evaluate(exit_rule, exit_values).matched:
+                        exit_index = exit_signal_index + 1
+                        exit_price_field = "open"
+                        exit_reason = "condition"
+                        target_reached = True
+                        break
+            entry = computed.iloc[entry_index]
             entry_price = float(entry["open"])
             if entry_price <= 0:
                 continue
+            if evaluation_mode == "within_period_up":
+                for candidate_index in range(entry_index, exit_index + 1):
+                    candidate_close = float(computed.iloc[candidate_index]["close"])
+                    favorable = (
+                        candidate_close > entry_price
+                        if position_side == "long"
+                        else candidate_close < entry_price
+                    )
+                    if favorable:
+                        exit_index = candidate_index
+                        exit_reason = "price_improvement"
+                        target_reached = True
+                        break
+            target_exit_price: float | None = None
+            if evaluation_mode == "target_return":
+                target_fraction = target_return_percent / 100
+                target_price = entry_price * (
+                    1 + target_fraction if position_side == "long"
+                    else 1 - target_fraction
+                )
+                for candidate_index in range(entry_index, exit_index + 1):
+                    candidate = computed.iloc[candidate_index]
+                    reached = (
+                        float(candidate["high"]) >= target_price
+                        if position_side == "long"
+                        else float(candidate["low"]) <= target_price
+                    )
+                    if reached:
+                        exit_index = candidate_index
+                        target_exit_price = target_price
+                        exit_reason = "target_return"
+                        target_reached = True
+                        break
+            exit_row = computed.iloc[exit_index]
+            exit_price = (
+                target_exit_price
+                if target_exit_price is not None
+                else float(exit_row[exit_price_field])
+            )
+            if entry_price <= 0 or exit_price <= 0:
+                continue
             path = computed.iloc[entry_index : exit_index + 1]
+            if position_side == "long":
+                return_percent = (exit_price / entry_price - 1) * 100
+                favorable = (float(path["high"].max()) / entry_price - 1) * 100
+                drawdown = (float(path["low"].min()) / entry_price - 1) * 100
+            else:
+                return_percent = (entry_price - exit_price) / entry_price * 100
+                favorable = (entry_price - float(path["low"].min())) / entry_price * 100
+                drawdown = (entry_price - float(path["high"].max())) / entry_price * 100
+            if evaluation_mode == "period_end":
+                target_reached = return_percent > 0
             trades.append(Trade(
                 signal_date=self._date(computed.iloc[signal_index]["trade_date"]),
                 entry_date=self._date(entry["trade_date"]),
                 exit_date=self._date(exit_row["trade_date"]),
                 entry_price=entry_price,
-                exit_price=float(exit_row["close"]),
-                return_percent=(float(exit_row["close"]) / entry_price - 1) * 100,
-                max_favorable_excursion_percent=(float(path["high"].max()) / entry_price - 1) * 100,
-                max_drawdown_percent=(float(path["low"].min()) / entry_price - 1) * 100,
+                exit_price=exit_price,
+                return_percent=return_percent,
+                max_favorable_excursion_percent=favorable,
+                max_drawdown_percent=drawdown,
+                position_side=position_side,
+                exit_reason=exit_reason,
+                target_reached=target_reached,
             ))
         return trades
 
@@ -110,13 +199,19 @@ class Backtester:
 
     def summarize(self, trades: list[Trade]) -> dict[str, float | int | None]:
         if not trades:
-            return {"trade_count": 0, "average_return_percent": None, "win_rate_percent": None, "median_return_percent": None, "max_drawdown_percent": None, "average_mfe_percent": None}
+            return {
+                "trade_count": 0, "average_return_percent": None,
+                "win_rate_percent": None, "outcome_probability_percent": None,
+                "median_return_percent": None, "max_drawdown_percent": None,
+                "average_mfe_percent": None,
+            }
         frame = pd.DataFrame(asdict(trade) for trade in trades)
         return {
             "trade_count": len(frame),
             "average_return_percent": float(frame["return_percent"].mean()),
             "median_return_percent": float(frame["return_percent"].median()),
             "win_rate_percent": float((frame["return_percent"] > 0).mean() * 100),
+            "outcome_probability_percent": float(frame["target_reached"].mean() * 100),
             "max_drawdown_percent": float(frame["max_drawdown_percent"].min()),
             "average_mfe_percent": float(frame["max_favorable_excursion_percent"].mean()),
         }
@@ -124,9 +219,20 @@ class Backtester:
     def run_horizons(
         self, prices: pd.DataFrame, rule: Mapping[str, object], holding_days: Iterable[int],
         timeframe_prices: Mapping[str, pd.DataFrame] | None = None, financials: pd.DataFrame | None = None,
+        exit_rule: Mapping[str, object] | None = None,
+        position_side: str = "long",
+        evaluation_mode: str = "condition_exit",
+        target_return_percent: float = 5.0,
     ) -> dict[str, dict[str, float | int | None]]:
         return {
-            str(days): self.summarize(self.run(prices, rule, int(days), timeframe_prices, financials))
+            str(days): self.summarize(
+                self.run(
+                    prices, rule, int(days), timeframe_prices, financials,
+                    exit_rule=exit_rule, position_side=position_side,
+                    evaluation_mode=evaluation_mode,
+                    target_return_percent=target_return_percent,
+                )
+            )
             for days in holding_days
         }
 

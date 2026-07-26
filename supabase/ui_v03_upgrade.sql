@@ -8,6 +8,8 @@ add column if not exists expectation_manual_logic text not null default 'all';
 alter table public.screening_preferences
 add column if not exists expectation_manual_conditions jsonb not null default '[]'::jsonb;
 alter table public.screening_preferences
+add column if not exists trade_direction text not null default 'long';
+alter table public.screening_preferences
 drop constraint if exists manual_condition_limit;
 alter table public.screening_preferences
 add constraint manual_condition_limit

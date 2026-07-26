@@ -59,6 +59,31 @@ class SupabaseSchemaTests(unittest.TestCase):
             with self.subTest(statement=statement):
                 self.assertIn(statement, sql)
 
+    def test_trade_strategy_upgrade_is_rerunnable(self) -> None:
+        sql = compact_sql("trade_strategy_upgrade.sql")
+        expected = (
+            "add column if not exists trade_direction text not null default 'long';",
+            "add column if not exists expectation_condition_summary text;",
+            "add column if not exists relaxation_label text;",
+            "add column if not exists relaxation_counts jsonb not null default '[]'::jsonb;",
+            "check (trade_direction in ('long', 'short'));",
+        )
+        for statement in expected:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, sql)
+
+    def test_expectation_evaluation_upgrade_is_rerunnable(self) -> None:
+        sql = compact_sql("expectation_evaluation_upgrade.sql")
+        expected = (
+            "add column if not exists expectation_evaluation_mode text not null default 'condition_exit';",
+            "add column if not exists target_return_percent double precision not null default 5.0;",
+            "add column if not exists outcome_probability_percent double precision;",
+            "'condition_exit', 'period_end', 'within_period_up', 'target_return'",
+        )
+        for statement in expected:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, sql)
+
 
 if __name__ == "__main__":
     unittest.main()

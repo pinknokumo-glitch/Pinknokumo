@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-zero-result-status",
+    [string]$Branch = "agent/expectation-outcome-probabilities",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -44,15 +44,18 @@ $publishFiles = @(
     "config/screening_options.yaml",
     "docs/SUPABASE_SETUP.md",
     "docs/ANDROID_DISTRIBUTION.md",
+    "modules/backtest.py",
     "modules/batch_backtest.py",
     "modules/cloud_batch.py",
     "modules/cloud_candidates.py",
     "modules/cloud_preferences.py",
     "modules/data_loader.py",
+    "modules/expectation.py",
     "modules/morning_candidates.py",
     "modules/cloud_results.py",
     "modules/screener.py",
     "modules/screening_options.py",
+    "modules/screening_relaxation.py",
     "modules/technical.py",
     "requirements.txt",
     "scripts/run_daily_pipeline.py",
@@ -64,17 +67,21 @@ $publishFiles = @(
     "scripts/update_signed_android.ps1",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
+    "tests/test_backtest.py",
     "tests/test_api.py",
     "tests/test_cloud_batch.py",
     "tests/test_cloud_preferences.py",
     "tests/test_cloud_candidates.py",
     "tests/test_supabase_schema.py",
+    "tests/test_screening_relaxation.py",
     "supabase/screening_preferences.sql",
     "supabase/screening_results.sql",
     "supabase/screening_candidates.sql",
     "supabase/backtest_requests.sql",
     "supabase/ui_v03_upgrade.sql",
     "supabase/multi_user_upgrade.sql",
+    "supabase/trade_strategy_upgrade.sql",
+    "supabase/expectation_evaluation_upgrade.sql",
     "tests/test_cloud_results.py",
     "tests/test_data_loader.py"
 )
@@ -82,7 +89,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Clarify zero-result delivery status"
+    & $git commit -m "Add selectable expectation probabilities"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -120,8 +127,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Clarify zero-result delivery status" `
-    --body "Shows successful zero-hit runs explicitly, displays result timestamps in JST, and warns when the reported hit count does not match the downloadable result details.").Trim()
+    --title "Add entry and exit strategy backtests" `
+    --body "Adds below/above operators, long and short trade directions, condition-triggered exits, staged manual RSI relaxation, and separate entry/exit condition reporting.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

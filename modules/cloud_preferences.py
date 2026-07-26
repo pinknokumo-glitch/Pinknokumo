@@ -24,6 +24,9 @@ class ScreeningPreference:
     expectation_genre_id: str | None = None
     expectation_manual_logic: str = "all"
     expectation_manual_conditions: list[dict[str, object]] | None = None
+    trade_direction: str = "long"
+    expectation_evaluation_mode: str = "condition_exit"
+    target_return_percent: float = 5.0
 
 
 class CloudPreferenceClient:
@@ -50,7 +53,8 @@ class CloudPreferenceClient:
             f"{self.url}/rest/v1/screening_preferences?{filters}"
             "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days,"
             "expectation_mode,expectation_genre_id,expectation_manual_logic,"
-            "expectation_manual_conditions&limit=1"
+            "expectation_manual_conditions,trade_direction,"
+            "expectation_evaluation_mode,target_return_percent&limit=1"
         )
         request = Request(endpoint, headers=self.headers())
         try:
@@ -114,10 +118,37 @@ class CloudPreferenceClient:
             expectation_genre_id = None
         else:
             raise ValueError("cloud expectation_mode is invalid")
+        trade_direction = str(raw.get("trade_direction") or "long")
+        if trade_direction not in {"long", "short"}:
+            raise ValueError("cloud trade_direction must be long or short")
+        evaluation_mode = str(
+            raw.get("expectation_evaluation_mode") or "condition_exit"
+        )
+        if evaluation_mode not in {
+            "condition_exit", "period_end", "within_period_up", "target_return"
+        }:
+            raise ValueError("cloud expectation_evaluation_mode is invalid")
+        target_return_percent = float(raw.get("target_return_percent") or 5.0)
+        if target_return_percent <= 0 or target_return_percent > 100:
+            raise ValueError(
+                "cloud target_return_percent must be greater than 0 and at most 100"
+            )
         return ScreeningPreference(
-            user_id, mode, genre_id, logic, [dict(item) for item in conditions],
-            holding_days, expectation_mode, expectation_genre_id,
-            expectation_logic, [dict(item) for item in expectation_conditions],
+            user_id=user_id,
+            mode=mode,
+            genre_id=genre_id,
+            manual_logic=logic,
+            manual_conditions=[dict(item) for item in conditions],
+            holding_days=holding_days,
+            expectation_mode=expectation_mode,
+            expectation_genre_id=expectation_genre_id,
+            expectation_manual_logic=expectation_logic,
+            expectation_manual_conditions=[
+                dict(item) for item in expectation_conditions
+            ],
+            trade_direction=trade_direction,
+            expectation_evaluation_mode=evaluation_mode,
+            target_return_percent=target_return_percent,
         )
 
     def fetch_all(self, options: ScreeningOptions) -> list[ScreeningPreference]:
@@ -125,7 +156,8 @@ class CloudPreferenceClient:
             f"{self.url}/rest/v1/screening_preferences?"
             "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days,"
             "expectation_mode,expectation_genre_id,expectation_manual_logic,"
-            "expectation_manual_conditions"
+            "expectation_manual_conditions,trade_direction,"
+            "expectation_evaluation_mode,target_return_percent"
             "&order=updated_at.asc"
         )
         request = Request(endpoint, headers=self.headers())
@@ -187,5 +219,8 @@ def apply_expectation_preference(
             else preference.manual_conditions
         ),
         holding_days=preference.holding_days,
+        trade_direction=preference.trade_direction,
+        expectation_evaluation_mode=preference.expectation_evaluation_mode,
+        target_return_percent=preference.target_return_percent,
     )
     return apply_preference(expectation, options, screening_config)

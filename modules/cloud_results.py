@@ -26,6 +26,10 @@ class CloudResultPublisher:
         chart_urls: Sequence[str],
         holding_days: int | None = None,
         condition_summary: str | None = None,
+        expectation_condition_summary: str | None = None,
+        trade_direction: str = "long",
+        evaluation_mode: str = "condition_exit",
+        target_return_percent: float = 5.0,
     ) -> int:
         rows = []
         for position, hit in enumerate(hits, start=1):
@@ -39,6 +43,13 @@ class CloudResultPublisher:
                 "chart_url": chart_urls[position - 1] if position <= len(chart_urls) else None,
                 "holding_days": holding_days,
                 "condition_summary": condition_summary,
+                "expectation_condition_summary": expectation_condition_summary,
+                "trade_direction": trade_direction,
+                "expectation_evaluation_mode": evaluation_mode,
+                "target_return_percent": target_return_percent,
+                "outcome_probability_percent": hit.get(
+                    "outcome_probability_percent"
+                ),
             })
         request = Request(
             f"{self.url}/rest/v1/screening_results"
@@ -63,6 +74,10 @@ class CloudResultPublisher:
         chart_urls: Sequence[str] = (),
         holding_days: int | None = None,
         condition_summary: str | None = None,
+        expectation_condition_summary: str | None = None,
+        trade_direction: str = "long",
+        evaluation_mode: str = "condition_exit",
+        target_return_percent: float = 5.0,
     ) -> int:
         """Replace one user's visible result set, including a valid zero-hit result."""
         delete = Request(
@@ -81,7 +96,8 @@ class CloudResultPublisher:
             return 0
         return self.publish(
             screening_date, profile, hits, comments, chart_urls,
-            holding_days, condition_summary,
+            holding_days, condition_summary, expectation_condition_summary,
+            trade_direction, evaluation_mode, target_return_percent,
         )
 
     def publish_run(
@@ -91,6 +107,12 @@ class CloudResultPublisher:
         holding_days: int,
         condition_summary: str,
         hit_count: int,
+        expectation_condition_summary: str | None = None,
+        trade_direction: str = "long",
+        evaluation_mode: str = "condition_exit",
+        target_return_percent: float = 5.0,
+        relaxation_label: str | None = None,
+        relaxation_counts: Sequence[Mapping[str, object]] = (),
     ) -> None:
         payload = [{
             "user_id": self.user_id,
@@ -98,6 +120,12 @@ class CloudResultPublisher:
             "profile_name": profile,
             "holding_days": holding_days,
             "condition_summary": condition_summary,
+            "expectation_condition_summary": expectation_condition_summary,
+            "trade_direction": trade_direction,
+            "expectation_evaluation_mode": evaluation_mode,
+            "target_return_percent": target_return_percent,
+            "relaxation_label": relaxation_label,
+            "relaxation_counts": list(relaxation_counts),
             "hit_count": hit_count,
         }]
         request = Request(
