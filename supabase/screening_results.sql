@@ -16,6 +16,12 @@ create table if not exists public.screening_results (
   expectation_evaluation_mode text not null default 'condition_exit',
   target_return_percent double precision not null default 5.0,
   outcome_probability_percent double precision,
+  reference_price double precision,
+  estimated_price_median double precision,
+  estimated_price_low double precision,
+  estimated_price_high double precision,
+  estimate_sample_count integer not null default 0,
+  median_days_to_outcome double precision,
   updated_at timestamptz not null default now(),
   primary key (user_id, screening_date, profile_name, code)
 );
@@ -34,6 +40,18 @@ alter table public.screening_results
 add column if not exists target_return_percent double precision not null default 5.0;
 alter table public.screening_results
 add column if not exists outcome_probability_percent double precision;
+alter table public.screening_results
+add column if not exists reference_price double precision;
+alter table public.screening_results
+add column if not exists estimated_price_median double precision;
+alter table public.screening_results
+add column if not exists estimated_price_low double precision;
+alter table public.screening_results
+add column if not exists estimated_price_high double precision;
+alter table public.screening_results
+add column if not exists estimate_sample_count integer not null default 0;
+alter table public.screening_results
+add column if not exists median_days_to_outcome double precision;
 
 create index if not exists screening_results_user_date_idx
 on public.screening_results (user_id, screening_date desc, position);

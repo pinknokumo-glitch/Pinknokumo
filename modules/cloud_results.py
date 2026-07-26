@@ -53,6 +53,20 @@ class CloudResultPublisher:
                 "outcome_probability_percent": self._finite_number(
                     hit.get("outcome_probability_percent")
                 ),
+                "reference_price": self._finite_number(hit.get("reference_price")),
+                "estimated_price_median": self._finite_number(
+                    hit.get("estimated_price_median")
+                ),
+                "estimated_price_low": self._finite_number(
+                    hit.get("estimated_price_low")
+                ),
+                "estimated_price_high": self._finite_number(
+                    hit.get("estimated_price_high")
+                ),
+                "estimate_sample_count": int(hit.get("estimate_sample_count") or 0),
+                "median_days_to_outcome": self._finite_number(
+                    hit.get("median_days_to_outcome")
+                ),
             })
         request = Request(
             f"{self.url}/rest/v1/screening_results"
