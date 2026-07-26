@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 import os
 import unittest
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 from modules.cloud_results import CloudResultPublisher
 
@@ -89,6 +91,49 @@ class CloudResultPublisherTests(unittest.TestCase):
         self.assertEqual(payload[0]["holding_days"], 20)
         self.assertEqual(payload[0]["relaxation_counts"][1]["hit_count"], 2)
         self.assertIn("on_conflict=user_id", request.full_url)
+
+    def test_publish_replaces_non_finite_numbers_with_null(self) -> None:
+        publisher = CloudResultPublisher(
+            "https://example.supabase.co", "sb_secret_test", "user-1"
+        )
+        response = MagicMock()
+        response.__enter__.return_value = response
+        with patch("modules.cloud_results.urlopen", return_value=response) as send:
+            publisher.publish(
+                "2026-07-25",
+                "cloud-profile",
+                [{
+                    "code": "72030",
+                    "expectation_score": float("nan"),
+                    "outcome_probability_percent": float("inf"),
+                }],
+                {},
+                [],
+            )
+        payload = json.loads(send.call_args.args[0].data.decode("utf-8"))
+        self.assertIsNone(payload[0]["expectation_score"])
+        self.assertIsNone(payload[0]["outcome_probability_percent"])
+
+    def test_publish_error_contains_supabase_response_body(self) -> None:
+        publisher = CloudResultPublisher(
+            "https://example.supabase.co", "sb_secret_test", "user-1"
+        )
+        error = HTTPError(
+            "https://example.supabase.co/rest/v1/screening_results",
+            400,
+            "Bad Request",
+            {},
+            BytesIO(b'{"message":"missing column"}'),
+        )
+        with patch("modules.cloud_results.urlopen", side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, "missing column"):
+                publisher.publish(
+                    "2026-07-25",
+                    "cloud-profile",
+                    [{"code": "72030"}],
+                    {},
+                    [],
+                )
 
 
 if __name__ == "__main__":
