@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Mapping, Sequence
 from urllib.error import HTTPError, URLError
@@ -38,7 +39,9 @@ class CloudResultPublisher:
                 "user_id": self.user_id, "screening_date": screening_date,
                 "profile_name": profile, "position": position, "code": code,
                 "company_name": hit.get("company_name"),
-                "expectation_score": hit.get("expectation_score"),
+                "expectation_score": self._finite_number(
+                    hit.get("expectation_score")
+                ),
                 "reason": hit.get("reason"), "comment": comments.get(code),
                 "chart_url": chart_urls[position - 1] if position <= len(chart_urls) else None,
                 "holding_days": holding_days,
@@ -47,8 +50,8 @@ class CloudResultPublisher:
                 "trade_direction": trade_direction,
                 "expectation_evaluation_mode": evaluation_mode,
                 "target_return_percent": target_return_percent,
-                "outcome_probability_percent": hit.get(
-                    "outcome_probability_percent"
+                "outcome_probability_percent": self._finite_number(
+                    hit.get("outcome_probability_percent")
                 ),
             })
         request = Request(
@@ -63,7 +66,13 @@ class CloudResultPublisher:
         try:
             with urlopen(request, timeout=20):
                 return len(rows)
-        except (HTTPError, URLError) as error:
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:1000]
+            raise RuntimeError(
+                "Could not publish cloud screening results: "
+                f"HTTP {error.code}: {detail}"
+            ) from error
+        except URLError as error:
             raise RuntimeError(
                 f"Could not publish cloud screening results: {type(error).__name__}"
             ) from error
@@ -88,7 +97,13 @@ class CloudResultPublisher:
         try:
             with urlopen(delete, timeout=20):
                 pass
-        except (HTTPError, URLError) as error:
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:1000]
+            raise RuntimeError(
+                "Could not replace cloud screening results: "
+                f"HTTP {error.code}: {detail}"
+            ) from error
+        except URLError as error:
             raise RuntimeError(
                 f"Could not replace cloud screening results: {type(error).__name__}"
             ) from error
@@ -141,7 +156,12 @@ class CloudResultPublisher:
         try:
             with urlopen(request, timeout=20):
                 pass
-        except (HTTPError, URLError) as error:
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:1000]
+            raise RuntimeError(
+                f"Could not publish cloud screening run: HTTP {error.code}: {detail}"
+            ) from error
+        except URLError as error:
             raise RuntimeError(
                 f"Could not publish cloud screening run: {type(error).__name__}"
             ) from error
@@ -151,4 +171,14 @@ class CloudResultPublisher:
         if self.key.startswith("eyJ"):
             headers["Authorization"] = f"Bearer {self.key}"
         return headers
+
+    @staticmethod
+    def _finite_number(value: object) -> float | None:
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
 

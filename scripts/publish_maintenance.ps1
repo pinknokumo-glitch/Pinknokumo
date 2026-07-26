@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/expectation-outcome-probabilities",
+    [string]$Branch = "agent/cloud-result-publish-safety",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -89,7 +89,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add selectable expectation probabilities"
+    & $git commit -m "Harden cloud result publishing"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
