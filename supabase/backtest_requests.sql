@@ -15,6 +15,7 @@ on public.backtest_requests (user_id, created_at desc);
 
 alter table public.backtest_requests enable row level security;
 grant select, insert on table public.backtest_requests to authenticated;
+grant select, update on table public.backtest_requests to service_role;
 
 drop policy if exists "users read own backtest requests" on public.backtest_requests;
 create policy "users read own backtest requests"

@@ -26,8 +26,16 @@ on table public.screening_preferences
 to authenticated;
 
 grant select
+on table public.screening_preferences
+to service_role;
+
+grant select
 on table public.screening_results
 to authenticated;
+
+grant select, insert, delete
+on table public.screening_results
+to service_role;
 
 create table if not exists public.screening_runs (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -41,6 +49,7 @@ create table if not exists public.screening_runs (
 
 alter table public.screening_runs enable row level security;
 grant select on table public.screening_runs to authenticated;
+grant select, insert, update on table public.screening_runs to service_role;
 
 drop policy if exists "read own screening run" on public.screening_runs;
 create policy "read own screening run"

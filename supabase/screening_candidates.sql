@@ -11,6 +11,7 @@ on public.screening_candidates (pool_date desc, code);
 alter table public.screening_candidates enable row level security;
 
 grant select on table public.screening_candidates to authenticated;
+grant select, insert, delete on table public.screening_candidates to service_role;
 
 drop policy if exists "authenticated users read candidate pool"
 on public.screening_candidates;
@@ -50,6 +51,7 @@ on public.screening_candidate_runs (pool_date);
 alter table public.screening_candidate_runs enable row level security;
 
 grant select on table public.screening_candidate_runs to authenticated;
+grant select, insert, delete on table public.screening_candidate_runs to service_role;
 
 drop policy if exists "authenticated users read candidate run"
 on public.screening_candidate_runs;
