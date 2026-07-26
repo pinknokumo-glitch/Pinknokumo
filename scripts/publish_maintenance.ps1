@@ -96,7 +96,9 @@ if ($runtimeFiles.Count -gt 0) {
     foreach ($file in $runtimeFiles) { Move-Item -LiteralPath $file.FullName -Destination $backupDir -Force }
 }
 try {
-    & $git fetch origin main
+    # Remove tracking refs for branches deleted after previous PR merges.
+    # Otherwise force-with-lease can reject reuse of the default branch as stale.
+    & $git fetch --prune origin main
     if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/main." }
     & $git switch -C $Branch origin/main
     if ($LASTEXITCODE -ne 0) { throw "Could not create the maintenance branch." }
