@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/cloud-operations-diagnostics",
+    [string]$Branch = "agent/fix-candidate-cloud-publish",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -81,7 +81,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add cloud operations diagnostics"
+    & $git commit -m "Fix candidate cloud publishing"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -117,8 +117,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add cloud operations diagnostics" `
-    --body "Publishes full-market coverage metadata to Supabase and shows universe, evaluated, candidate, failure, coverage, and readiness status in Android. Bumps the Android app to 0.13.0.").Trim()
+    --title "Fix candidate cloud publishing" `
+    --body "Makes the candidate-run schema migration rerunnable, removes the fragile upsert dependency, and includes Supabase response details in future failure logs.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
