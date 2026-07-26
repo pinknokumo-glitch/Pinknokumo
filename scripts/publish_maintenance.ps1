@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/service-role-schema-grants",
+    [string]$Branch = "agent/android-zero-result-status",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -82,7 +82,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Document Supabase service-role grants"
+    & $git commit -m "Clarify zero-result delivery status"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -120,8 +120,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Document Supabase service-role grants" `
-    --body "Keeps the checked-in Supabase schemas aligned with the runtime permissions verified by the successful multi-user app delivery test, and adds regression coverage for the required grants.").Trim()
+    --title "Clarify zero-result delivery status" `
+    --body "Shows successful zero-hit runs explicitly, displays result timestamps in JST, and warns when the reported hit count does not match the downloadable result details.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 
