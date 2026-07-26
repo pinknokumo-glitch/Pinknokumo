@@ -103,6 +103,22 @@ class SupabaseSchemaTests(unittest.TestCase):
                 )
         self.assertGreaterEqual(sql.count("between 1 and 1000"), 3)
 
+    def test_conditional_price_estimate_upgrade_is_rerunnable(self) -> None:
+        sql = compact_sql("conditional_price_estimate_upgrade.sql")
+        expected = (
+            "add column if not exists reference_price double precision;",
+            "add column if not exists estimated_price_median double precision;",
+            "add column if not exists estimated_price_low double precision;",
+            "add column if not exists estimated_price_high double precision;",
+            "add column if not exists estimate_sample_count integer not null default 0;",
+            "add column if not exists median_days_to_outcome double precision;",
+        )
+        for statement in expected:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, sql)
+        self.assertNotIn("delete from", sql)
+        self.assertNotIn("drop table", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

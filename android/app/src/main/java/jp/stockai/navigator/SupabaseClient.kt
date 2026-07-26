@@ -36,6 +36,12 @@ data class CloudScreeningResult(
     val evaluationMode: String,
     val targetReturnPercent: Double,
     val outcomeProbabilityPercent: Double?,
+    val referencePrice: Double?,
+    val estimatedPriceMedian: Double?,
+    val estimatedPriceLow: Double?,
+    val estimatedPriceHigh: Double?,
+    val estimateSampleCount: Int,
+    val medianDaysToOutcome: Double?,
 )
 data class CloudScreeningRun(
     val screeningDate: String,
@@ -240,6 +246,8 @@ class SupabaseClient(
                 "&select=screening_date,profile_name,position,code,company_name,expectation_score,comment,chart_url" +
                 ",holding_days,condition_summary,expectation_condition_summary,trade_direction" +
                 ",expectation_evaluation_mode,target_return_percent,outcome_probability_percent" +
+                ",reference_price,estimated_price_median,estimated_price_low,estimated_price_high" +
+                ",estimate_sample_count,median_days_to_outcome" +
                 "&order=screening_date.desc,position.asc&limit=$safeLimit",
             token = session.accessToken,
         )
@@ -269,6 +277,22 @@ class SupabaseClient(
                     targetReturnPercent = row.optDouble("target_return_percent", 5.0),
                     outcomeProbabilityPercent = row.optDouble(
                         "outcome_probability_percent"
+                    ).takeUnless { it.isNaN() },
+                    referencePrice = row.optDouble(
+                        "reference_price"
+                    ).takeUnless { it.isNaN() },
+                    estimatedPriceMedian = row.optDouble(
+                        "estimated_price_median"
+                    ).takeUnless { it.isNaN() },
+                    estimatedPriceLow = row.optDouble(
+                        "estimated_price_low"
+                    ).takeUnless { it.isNaN() },
+                    estimatedPriceHigh = row.optDouble(
+                        "estimated_price_high"
+                    ).takeUnless { it.isNaN() },
+                    estimateSampleCount = row.optInt("estimate_sample_count", 0),
+                    medianDaysToOutcome = row.optDouble(
+                        "median_days_to_outcome"
                     ).takeUnless { it.isNaN() },
                 )
             }

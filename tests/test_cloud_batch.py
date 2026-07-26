@@ -4,6 +4,7 @@ import unittest
 
 from modules.cloud_batch import (
     _codes_requiring_backtest,
+    _estimated_price_fields,
     group_preferences,
     preference_signature,
 )
@@ -69,7 +70,8 @@ class CloudBatchTests(unittest.TestCase):
             database = Database(Path(directory) / "test.db")
             database.initialize()
             database.save_analysis_snapshot(
-                "7203", "2026-07-24", "cloud_signature_0", "backtest", {"ok": True}
+                "7203", "2026-07-24", "cloud_signature_0", "backtest",
+                {"summary": {"conditional_median_return_percent": 5.0}},
             )
             missing = _codes_requiring_backtest(
                 database,
@@ -78,6 +80,41 @@ class CloudBatchTests(unittest.TestCase):
                 "2026-07-24",
             )
             self.assertEqual(missing, ["6758"])
+
+    def test_legacy_backtest_without_price_distribution_is_recomputed(self) -> None:
+        with TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "test.db")
+            database.initialize()
+            database.save_analysis_snapshot(
+                "7203", "2026-07-24", "cloud_signature_0", "backtest",
+                {"summary": {"trade_count": 10}},
+            )
+            self.assertEqual(
+                _codes_requiring_backtest(
+                    database, ["7203"], "cloud_signature_0", "2026-07-24"
+                ),
+                ["7203"],
+            )
+
+    def test_price_estimate_uses_reached_outcome_distribution(self) -> None:
+        summary = {
+            "target_reached_count": 40,
+            "conditional_median_return_percent": 10.0,
+            "conditional_return_p25_percent": 5.0,
+            "conditional_return_p75_percent": 20.0,
+            "median_sessions_to_outcome": 12.0,
+        }
+        long_result = _estimated_price_fields(1000, summary, "long")
+        short_result = _estimated_price_fields(1000, summary, "short")
+
+        self.assertEqual(long_result["estimated_price_median"], 1100.0)
+        self.assertEqual(long_result["estimated_price_low"], 1050.0)
+        self.assertEqual(long_result["estimated_price_high"], 1200.0)
+        self.assertEqual(short_result["estimated_price_median"], 900.0)
+        self.assertEqual(short_result["estimated_price_low"], 800.0)
+        self.assertEqual(short_result["estimated_price_high"], 950.0)
+        self.assertEqual(long_result["estimate_sample_count"], 40)
+        self.assertEqual(long_result["median_days_to_outcome"], 12.0)
 
     def test_previous_day_backtest_is_not_reused(self) -> None:
         with TemporaryDirectory() as directory:

@@ -88,7 +88,11 @@ Preference writes remain restricted by RLS.
 8. Existing projects upgrading to StockAI 0.16.0 must run
    `supabase/holding_period_upgrade.sql` once. It preserves existing rows, is rerunnable,
    and expands the expectation horizon to 1-1000 business days.
-9. Insert the initial preference while authenticated, or use the dashboard for the first row.
-10. Register the three server values above as GitHub Actions secrets.
+9. Existing projects upgrading to StockAI 0.17.0 must run
+   `supabase/conditional_price_estimate_upgrade.sql` once. It preserves existing rows
+   and adds the historical conditional median price, interquartile range, sample size,
+   and median time-to-outcome fields.
+10. Insert the initial preference while authenticated, or use the dashboard for the first row.
+11. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.

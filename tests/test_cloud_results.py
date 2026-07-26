@@ -30,7 +30,16 @@ class CloudResultPublisherTests(unittest.TestCase):
         with patch("modules.cloud_results.urlopen", return_value=response) as send:
             count = publisher.publish(
                 "2026-07-24", "oversold_daily_relaxed",
-                [{"code": "72030", "expectation_score": 61.2}],
+                [{
+                    "code": "72030",
+                    "expectation_score": 61.2,
+                    "reference_price": 1000.0,
+                    "estimated_price_median": 1080.0,
+                    "estimated_price_low": 1030.0,
+                    "estimated_price_high": 1140.0,
+                    "estimate_sample_count": 42,
+                    "median_days_to_outcome": 18.0,
+                }],
                 {"72030": "comment"}, ["https://example.com/72030.png"],
                 holding_days=20,
                 condition_summary='{"all":[]}',
@@ -49,6 +58,12 @@ class CloudResultPublisherTests(unittest.TestCase):
             payload[0]["expectation_condition_summary"], '{"any":[]}'
         )
         self.assertEqual(payload[0]["trade_direction"], "short")
+        self.assertEqual(payload[0]["reference_price"], 1000.0)
+        self.assertEqual(payload[0]["estimated_price_median"], 1080.0)
+        self.assertEqual(payload[0]["estimated_price_low"], 1030.0)
+        self.assertEqual(payload[0]["estimated_price_high"], 1140.0)
+        self.assertEqual(payload[0]["estimate_sample_count"], 42)
+        self.assertEqual(payload[0]["median_days_to_outcome"], 18.0)
         self.assertIn("on_conflict=user_id,screening_date,profile_name,code", request.full_url)
 
     def test_replace_deletes_only_the_target_users_previous_results(self) -> None:

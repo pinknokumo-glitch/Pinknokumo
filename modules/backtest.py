@@ -22,6 +22,7 @@ class Trade:
     position_side: str = "long"
     exit_reason: str = "holding_period"
     target_reached: bool = False
+    sessions_held: int = 0
 
 class Backtester:
     def __init__(self, indicator_config: Mapping[str, object], backtest_config: Mapping[str, object]) -> None:
@@ -145,6 +146,7 @@ class Backtester:
                 position_side=position_side,
                 exit_reason=exit_reason,
                 target_reached=target_reached,
+                sessions_held=exit_index - entry_index + 1,
             ))
         return trades
 
@@ -203,9 +205,14 @@ class Backtester:
                 "trade_count": 0, "average_return_percent": None,
                 "win_rate_percent": None, "outcome_probability_percent": None,
                 "median_return_percent": None, "max_drawdown_percent": None,
-                "average_mfe_percent": None,
+                "average_mfe_percent": None, "target_reached_count": 0,
+                "conditional_median_return_percent": None,
+                "conditional_return_p25_percent": None,
+                "conditional_return_p75_percent": None,
+                "median_sessions_to_outcome": None,
             }
         frame = pd.DataFrame(asdict(trade) for trade in trades)
+        reached = frame.loc[frame["target_reached"]]
         return {
             "trade_count": len(frame),
             "average_return_percent": float(frame["return_percent"].mean()),
@@ -214,6 +221,19 @@ class Backtester:
             "outcome_probability_percent": float(frame["target_reached"].mean() * 100),
             "max_drawdown_percent": float(frame["max_drawdown_percent"].min()),
             "average_mfe_percent": float(frame["max_favorable_excursion_percent"].mean()),
+            "target_reached_count": len(reached),
+            "conditional_median_return_percent": (
+                float(reached["return_percent"].median()) if not reached.empty else None
+            ),
+            "conditional_return_p25_percent": (
+                float(reached["return_percent"].quantile(0.25)) if not reached.empty else None
+            ),
+            "conditional_return_p75_percent": (
+                float(reached["return_percent"].quantile(0.75)) if not reached.empty else None
+            ),
+            "median_sessions_to_outcome": (
+                float(reached["sessions_held"].median()) if not reached.empty else None
+            ),
         }
 
     def run_horizons(

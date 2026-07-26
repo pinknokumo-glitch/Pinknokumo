@@ -727,7 +727,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.16.0",
+        "バージョン" to "StockAI Navigator 0.17.0",
+        "0.17.0" to "期待値条件の達成事例から参考株価の中央値・価格帯・検証件数・到達日数を表示。",
         "0.16.0" to "期待値の検証期間を最大1000営業日へ拡張し、360営業日などの長期検証に対応。",
         "0.15.0" to "期待値を条件到達、期間末の騰落、期間内の価格改善、目標騰落率到達から選択でき、達成確率を表示。",
         "0.14.0" to "条件に以下・以上を追加。入口と出口を対にした買い→売り／空売り→買い戻しの条件到達型バックテストに対応。",
@@ -1087,6 +1088,38 @@ private fun DeliveryResultsScreen(
                                 Text(
                                     "${evaluationModeLabel(result.evaluationMode, result.targetReturnPercent)}の確率 " +
                                         String.format("%.1f%%", it)
+                                )
+                            }
+                            result.referencePrice?.let {
+                                Text("配信時の基準価格: ${String.format("%,.2f円", it)}")
+                            }
+                            result.estimatedPriceMedian?.let { median ->
+                                Text(
+                                    "条件達成時の参考価格（中央値）: " +
+                                        String.format("%,.2f円", median)
+                                )
+                                if (result.estimatedPriceLow != null &&
+                                    result.estimatedPriceHigh != null
+                                ) {
+                                    Text(
+                                        "過去事例の中心50%価格帯: " +
+                                            String.format(
+                                                "%,.2f～%,.2f円",
+                                                result.estimatedPriceLow,
+                                                result.estimatedPriceHigh,
+                                            )
+                                    )
+                                }
+                                Text(
+                                    "達成事例: ${result.estimateSampleCount}件" +
+                                        (result.medianDaysToOutcome?.let {
+                                            " / 到達まで中央値 ${String.format("%.1f", it)}営業日"
+                                        } ?: "")
+                                )
+                                Text(
+                                    "過去の同条件に基づく参考値で、将来の株価を保証するものではありません。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Text("検証期間 ${result.holdingDays ?: "-"}営業日以内")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -268,11 +269,15 @@ def _compute_group(
                 code = str(hit["code"])
                 result = repository.latest_backtest_result(code, effective_profile)
                 if result:
-                    hit["outcome_probability_percent"] = (
-                        result.get("summary", {}).get(
-                            "outcome_probability_percent"
-                        )
+                    summary = result.get("summary", {})
+                    hit["outcome_probability_percent"] = summary.get(
+                        "outcome_probability_percent"
                     )
+                    hit.update(_estimated_price_fields(
+                        hit.get("daily.close"),
+                        summary,
+                        preference.trade_direction,
+                    ))
                 backtest_comment = (
                     str(result["comment"])
                     if result and result.get("comment")
@@ -319,10 +324,69 @@ def _codes_requiring_backtest(
     placeholders = ",".join("?" for _ in codes)
     with database.connect() as connection:
         rows = connection.execute(
-            f"""SELECT DISTINCT code FROM analysis_snapshot
+            f"""SELECT code, result_json FROM analysis_snapshot
                 WHERE analysis_type='backtest' AND profile_name=?
                   AND as_of_date=? AND code IN ({placeholders})""",
             [profile_name, as_of_date, *codes],
         ).fetchall()
-    cached = {str(row[0]) for row in rows}
+    cached = set()
+    for row in rows:
+        result = json.loads(row[1])
+        summary = result.get("summary", {})
+        if "conditional_median_return_percent" in summary:
+            cached.add(str(row[0]))
     return [str(code) for code in codes if str(code) not in cached]
+
+
+def _estimated_price_fields(
+    reference_price: object,
+    summary: Mapping[str, object],
+    position_side: str,
+) -> dict[str, float | int | None]:
+    """Convert reached-outcome return distribution into a reference price range."""
+    try:
+        reference = float(reference_price)
+    except (TypeError, ValueError):
+        reference = math.nan
+    if not math.isfinite(reference) or reference <= 0:
+        reference = None
+
+    sample_count = int(summary.get("target_reached_count") or 0)
+    median_days = _finite_float(summary.get("median_sessions_to_outcome"))
+    returns = [
+        _finite_float(summary.get("conditional_median_return_percent")),
+        _finite_float(summary.get("conditional_return_p25_percent")),
+        _finite_float(summary.get("conditional_return_p75_percent")),
+    ]
+    if reference is None or sample_count <= 0 or any(value is None for value in returns):
+        return {
+            "reference_price": reference,
+            "estimated_price_median": None,
+            "estimated_price_low": None,
+            "estimated_price_high": None,
+            "estimate_sample_count": sample_count,
+            "median_days_to_outcome": median_days,
+        }
+
+    def price_for(return_percent: float) -> float:
+        direction = -1 if position_side == "short" else 1
+        return reference * (1 + direction * return_percent / 100)
+
+    median_price = price_for(returns[0])
+    range_prices = sorted((price_for(returns[1]), price_for(returns[2])))
+    return {
+        "reference_price": round(reference, 2),
+        "estimated_price_median": round(median_price, 2),
+        "estimated_price_low": round(range_prices[0], 2),
+        "estimated_price_high": round(range_prices[1], 2),
+        "estimate_sample_count": sample_count,
+        "median_days_to_outcome": median_days,
+    }
+
+
+def _finite_float(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None

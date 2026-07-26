@@ -5,7 +5,7 @@ import unittest
 
 import pandas as pd
 
-from modules.backtest import Backtester
+from modules.backtest import Backtester, Trade
 from modules.threshold_research import oversold_rule, rank_threshold_results
 
 
@@ -29,6 +29,30 @@ def prices(dates: list[str], close: float = 100.0) -> pd.DataFrame:
 class BacktestPointInTimeTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.backtester = Backtester(INDICATORS_DISABLED, {"backtest": {}})
+
+    def test_summary_describes_only_reached_outcomes_for_price_estimates(self) -> None:
+        common = {
+            "signal_date": "2026-01-01",
+            "entry_date": "2026-01-02",
+            "exit_date": "2026-01-06",
+            "entry_price": 100.0,
+            "exit_price": 110.0,
+            "max_favorable_excursion_percent": 20.0,
+            "max_drawdown_percent": -5.0,
+        }
+        trades = [
+            Trade(**common, return_percent=10.0, target_reached=True, sessions_held=3),
+            Trade(**common, return_percent=20.0, target_reached=True, sessions_held=5),
+            Trade(**common, return_percent=-5.0, target_reached=False, sessions_held=20),
+        ]
+
+        summary = self.backtester.summarize(trades)
+
+        self.assertEqual(summary["target_reached_count"], 2)
+        self.assertEqual(summary["conditional_median_return_percent"], 15.0)
+        self.assertEqual(summary["conditional_return_p25_percent"], 12.5)
+        self.assertEqual(summary["conditional_return_p75_percent"], 17.5)
+        self.assertEqual(summary["median_sessions_to_outcome"], 4.0)
 
     def test_financial_values_are_not_visible_before_disclosure(self) -> None:
         daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
