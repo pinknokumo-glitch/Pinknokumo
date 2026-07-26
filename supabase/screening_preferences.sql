@@ -4,7 +4,7 @@ create table if not exists public.screening_preferences (
   genre_id text,
   manual_logic text check (manual_logic in ('all', 'any')) default 'all',
   manual_conditions jsonb not null default '[]'::jsonb,
-  holding_days integer not null default 60 check (holding_days between 1 and 250),
+  holding_days integer not null default 60 check (holding_days between 1 and 1000),
   expectation_mode text not null default 'auto' check (expectation_mode in ('auto', 'manual')),
   expectation_genre_id text,
   expectation_manual_logic text not null default 'all' check (expectation_manual_logic in ('all', 'any')),
@@ -50,7 +50,7 @@ alter table public.screening_preferences
 drop constraint if exists screening_preferences_holding_days_check;
 alter table public.screening_preferences
 add constraint screening_preferences_holding_days_check
-check (holding_days between 1 and 250);
+check (holding_days between 1 and 1000);
 
 alter table public.screening_preferences enable row level security;
 

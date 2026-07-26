@@ -91,6 +91,18 @@ class SupabaseSchemaTests(unittest.TestCase):
             sql,
         )
 
+    def test_holding_period_upgrade_preserves_rows_and_allows_360_days(self) -> None:
+        sql = compact_sql("holding_period_upgrade.sql")
+        self.assertNotIn("delete from", sql)
+        self.assertNotIn("drop table", sql)
+        for table in ("screening_preferences", "screening_results", "screening_runs"):
+            with self.subTest(table=table):
+                self.assertIn(
+                    f"alter table public.{table} drop constraint if exists {table}_holding_days_check;",
+                    sql,
+                )
+        self.assertGreaterEqual(sql.count("between 1 and 1000"), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

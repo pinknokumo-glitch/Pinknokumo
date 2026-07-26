@@ -727,7 +727,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.15.0",
+        "バージョン" to "StockAI Navigator 0.16.0",
+        "0.16.0" to "期待値の検証期間を最大1000営業日へ拡張し、360営業日などの長期検証に対応。",
         "0.15.0" to "期待値を条件到達、期間末の騰落、期間内の価格改善、目標騰落率到達から選択でき、達成確率を表示。",
         "0.14.0" to "条件に以下・以上を追加。入口と出口を対にした買い→売り／空売り→買い戻しの条件到達型バックテストに対応。",
         "0.13.1" to "配信結果の0件を正常終了として明示し、結果更新時刻を日本時間で表示。該当件数と結果詳細の不一致も検知。",
@@ -1321,7 +1322,7 @@ private fun ScreeningScreen(
         val loaded = options
         val resolvedHoldingDays = holdingDays.toIntOrNull()
             ?: throw IllegalArgumentException("保有営業日数を入力してください")
-        require(resolvedHoldingDays in 1..250) { "保有営業日数は1～250日で入力してください" }
+        require(resolvedHoldingDays in 1..1000) { "検証期間は1～1000営業日で入力してください" }
         val conditions = loaded?.manualFields?.mapNotNull { field ->
             manualValues[field.field]?.toDoubleOrNull()?.let { value ->
                 ManualCondition(
@@ -1743,10 +1744,10 @@ private fun ScreeningScreen(
                     }
                     OutlinedTextField(
                         value = holdingDays,
-                        onValueChange = { holdingDays = it.filter(Char::isDigit).take(3) },
+                        onValueChange = { holdingDays = it.filter(Char::isDigit).take(4) },
                         label = { Text("検証期間（営業日）") },
                         supportingText = {
-                            Text("選択した結果が何日以内に起きるかを調べます（1～250日）。")
+                            Text("選択した結果が何日以内に起きるかを調べます（1～1000営業日）。")
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,

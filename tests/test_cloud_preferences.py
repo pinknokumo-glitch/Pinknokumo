@@ -122,12 +122,12 @@ class CloudPreferenceTestCase(unittest.TestCase):
         )
         self.assertEqual(default.holding_days, 60)
         custom = CloudPreferenceClient.validate(
-            {"mode": "auto", "genre_id": "value", "holding_days": 20}, self.options
+            {"mode": "auto", "genre_id": "value", "holding_days": 360}, self.options
         )
-        self.assertEqual(custom.holding_days, 20)
+        self.assertEqual(custom.holding_days, 360)
         with self.assertRaises(ValueError):
             CloudPreferenceClient.validate(
-                {"mode": "auto", "genre_id": "value", "holding_days": 251},
+                {"mode": "auto", "genre_id": "value", "holding_days": 1001},
                 self.options,
             )
 
