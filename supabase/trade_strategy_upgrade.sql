@@ -34,5 +34,5 @@ add constraint screening_runs_trade_direction_check
 check (trade_direction in ('long', 'short'));
 
 grant select on table public.screening_preferences to service_role;
-grant select, insert, delete on table public.screening_results to service_role;
+grant select, insert, update, delete on table public.screening_results to service_role;
 grant select, insert, update on table public.screening_runs to service_role;

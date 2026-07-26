@@ -44,7 +44,7 @@ grant select
 on table public.screening_results
 to authenticated;
 
-grant select, insert, delete
+grant select, insert, update, delete
 on table public.screening_results
 to service_role;
 

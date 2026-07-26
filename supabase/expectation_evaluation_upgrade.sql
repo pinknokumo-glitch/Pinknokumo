@@ -31,5 +31,5 @@ alter table public.screening_runs
 add column if not exists target_return_percent double precision not null default 5.0;
 
 grant select on table public.screening_preferences to service_role;
-grant select, insert, delete on table public.screening_results to service_role;
+grant select, insert, update, delete on table public.screening_results to service_role;
 grant select, insert, update on table public.screening_runs to service_role;

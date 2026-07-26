@@ -22,7 +22,7 @@ class SupabaseSchemaTests(unittest.TestCase):
     def test_service_role_can_publish_screening_results(self) -> None:
         sql = compact_sql("screening_results.sql")
         self.assertIn(
-            "grant select, insert, delete on table public.screening_results to service_role;",
+            "grant select, insert, update, delete on table public.screening_results to service_role;",
             sql,
         )
         self.assertIn(
@@ -52,7 +52,7 @@ class SupabaseSchemaTests(unittest.TestCase):
         sql = compact_sql("multi_user_upgrade.sql")
         expected = (
             "grant select on table public.screening_preferences to service_role;",
-            "grant select, insert, delete on table public.screening_results to service_role;",
+            "grant select, insert, update, delete on table public.screening_results to service_role;",
             "grant select, insert, update on table public.screening_runs to service_role;",
         )
         for statement in expected:
@@ -83,6 +83,13 @@ class SupabaseSchemaTests(unittest.TestCase):
         for statement in expected:
             with self.subTest(statement=statement):
                 self.assertIn(statement, sql)
+
+    def test_screening_result_upsert_grant_is_rerunnable(self) -> None:
+        sql = compact_sql("screening_results_update_grant.sql")
+        self.assertIn(
+            "grant select, insert, update, delete on table public.screening_results to service_role;",
+            sql,
+        )
 
 
 if __name__ == "__main__":

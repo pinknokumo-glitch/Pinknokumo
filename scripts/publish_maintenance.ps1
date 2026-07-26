@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/cloud-result-publish-safety",
+    [string]$Branch = "agent/screening-results-update-grant",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -82,6 +82,7 @@ $publishFiles = @(
     "supabase/multi_user_upgrade.sql",
     "supabase/trade_strategy_upgrade.sql",
     "supabase/expectation_evaluation_upgrade.sql",
+    "supabase/screening_results_update_grant.sql",
     "tests/test_cloud_results.py",
     "tests/test_data_loader.py"
 )
@@ -89,7 +90,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Harden cloud result publishing"
+    & $git commit -m "Grant cloud result upsert access"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
