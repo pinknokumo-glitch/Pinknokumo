@@ -21,7 +21,7 @@ alter table public.screening_preferences
 drop constraint if exists screening_preferences_holding_days_check;
 alter table public.screening_preferences
 add constraint screening_preferences_holding_days_check
-check (holding_days between 1 and 250);
+check (holding_days between 1 and 1000);
 
 alter table public.screening_results
 add column if not exists holding_days integer;
@@ -52,7 +52,7 @@ create table if not exists public.screening_runs (
   user_id uuid primary key references auth.users(id) on delete cascade,
   screening_date date not null,
   profile_name text not null,
-  holding_days integer not null check (holding_days between 1 and 250),
+  holding_days integer not null check (holding_days between 1 and 1000),
   condition_summary text,
   expectation_condition_summary text,
   trade_direction text not null default 'long' check (trade_direction in ('long', 'short')),

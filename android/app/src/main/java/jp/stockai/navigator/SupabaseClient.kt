@@ -189,7 +189,7 @@ class SupabaseClient(
         require(preference.mode != "auto" || !preference.genreId.isNullOrBlank()) { "ジャンルを選択してください" }
         require(preference.manualConditions.size <= 32) { "ソート条件は32件までです" }
         require(preference.expectationManualConditions.size <= 32) { "期待値条件は32件までです" }
-        require(preference.holdingDays in 1..250) { "保有営業日数は1～250日で入力してください" }
+        require(preference.holdingDays in 1..1000) { "検証期間は1～1000営業日で入力してください" }
         require(preference.tradeDirection in setOf("long", "short")) {
             "売買方向が不正です"
         }

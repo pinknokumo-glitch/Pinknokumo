@@ -93,8 +93,8 @@ class CloudPreferenceClient:
             genre_id = None
         user_id = str(raw.get("user_id") or "") or None
         holding_days = int(raw.get("holding_days") or 60)
-        if holding_days < 1 or holding_days > 250:
-            raise ValueError("cloud holding_days must be between 1 and 250")
+        if holding_days < 1 or holding_days > 1000:
+            raise ValueError("cloud holding_days must be between 1 and 1000")
         expectation_mode = str(raw.get("expectation_mode") or mode)
         expectation_genre_id = str(
             raw.get("expectation_genre_id") or genre_id or ""
