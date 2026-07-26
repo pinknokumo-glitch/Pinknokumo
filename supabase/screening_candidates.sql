@@ -18,3 +18,27 @@ create policy "authenticated users read candidate pool"
 on public.screening_candidates for select
 to authenticated
 using (true);
+
+create table if not exists public.screening_candidate_runs (
+  pool_date date primary key,
+  universe_count integer not null default 0 check (universe_count >= 0),
+  evaluated_count integer not null default 0 check (evaluated_count >= 0),
+  candidate_count integer not null default 0 check (candidate_count >= 0),
+  failed_count integer not null default 0 check (failed_count >= 0),
+  coverage_ratio double precision not null default 0
+    check (coverage_ratio >= 0 and coverage_ratio <= 1),
+  status text not null default 'pending',
+  usable boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.screening_candidate_runs enable row level security;
+
+grant select on table public.screening_candidate_runs to authenticated;
+
+drop policy if exists "authenticated users read candidate run"
+on public.screening_candidate_runs;
+create policy "authenticated users read candidate run"
+on public.screening_candidate_runs for select
+to authenticated
+using (true);

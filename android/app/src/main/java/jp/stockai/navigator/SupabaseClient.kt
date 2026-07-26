@@ -248,6 +248,39 @@ class SupabaseClient(
     }
 
     fun loadLatestCandidates(session: SupabaseSession): CandidatePool {
+        val runResponse = runCatching {
+            requestArray(
+                "GET",
+                "/rest/v1/screening_candidate_runs?select=pool_date,universe_count," +
+                    "evaluated_count,candidate_count,failed_count,coverage_ratio,status," +
+                    "usable,updated_at&order=pool_date.desc&limit=1",
+                token = session.accessToken,
+            )
+        }.getOrNull()
+        if (runResponse != null && runResponse.length() > 0) {
+            val run = runResponse.getJSONObject(0)
+            val latestDate = run.getString("pool_date")
+            val candidates = requestArray(
+                "GET",
+                "/rest/v1/screening_candidates?pool_date=eq.$latestDate&select=code" +
+                    "&order=code.asc&limit=5000",
+                token = session.accessToken,
+            )
+            return CandidatePool(
+                poolDate = latestDate,
+                codes = (0 until candidates.length()).map {
+                    candidates.getJSONObject(it).getString("code")
+                },
+                updatedAt = run.optString("updated_at").takeIf { it.isNotBlank() },
+                universeCount = run.optInt("universe_count"),
+                evaluatedCount = run.optInt("evaluated_count"),
+                candidateCount = run.optInt("candidate_count"),
+                failedCount = run.optInt("failed_count"),
+                coverageRatio = run.optDouble("coverage_ratio"),
+                status = run.optString("status").takeIf { it.isNotBlank() },
+                usable = run.optBoolean("usable"),
+            )
+        }
         val response = requestArray(
             "GET",
             "/rest/v1/screening_candidates?select=pool_date,code,updated_at" +

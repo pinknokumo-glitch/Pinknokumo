@@ -36,9 +36,14 @@ def main() -> int:
     if result["usable"] and url and key:
         metadata, codes = database.latest_candidate_pool()
         if metadata is not None:
+            cloud_metadata = {
+                **metadata,
+                "coverage_ratio": result["coverage_ratio"],
+                "usable": result["usable"],
+            }
             result["cloud_candidate_count"] = CloudCandidatePublisher(
                 url, key
-            ).replace(str(metadata["pool_date"]), codes)
+            ).replace(str(metadata["pool_date"]), codes, cloud_metadata)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["usable"] else 1
 

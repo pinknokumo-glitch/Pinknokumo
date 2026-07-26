@@ -659,10 +659,28 @@ private fun DataUpdateStatusScreen(session: SupabaseSession, onBack: () -> Unit)
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("最終取得日時: ${pool?.updatedAt ?: pool?.poolDate ?: "未取得"}")
-            Text("取得銘柄数: ${pool?.codes?.size ?: 0}件")
+            Text(
+                "全市場対象: ${pool?.universeCount ?: "-"}件 / " +
+                    "判定済み: ${pool?.evaluatedCount ?: "-"}件"
+            )
+            Text(
+                "候補銘柄数: ${pool?.candidateCount ?: pool?.codes?.size ?: 0}件 / " +
+                    "取得失敗: ${pool?.failedCount ?: "-"}件"
+            )
+            pool?.coverageRatio?.let {
+                Text("カバー率: ${String.format("%.1f", it * 100)}%")
+            }
+            Text("夕方処理状態: ${pool?.status ?: "未取得"}")
             Text("配信判定最終日: ${run?.screeningDate ?: "未実行"}")
             Text("配信該当銘柄数: ${run?.hitCount ?: 0}件")
-            Text("障害状況: ${if (error == null) "確認された障害なし" else error}")
+            val hasPoolProblem = pool?.usable == false
+            Text(
+                "障害状況: ${when {
+                    error != null -> error
+                    hasPoolProblem -> "全市場データの取得率が基準未満です"
+                    else -> "確認された障害なし"
+                }}"
+            )
         }
     }
 }
@@ -690,7 +708,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.12.5",
+        "バージョン" to "StockAI Navigator 0.13.0",
+        "0.13.0" to "全市場の対象数・判定済み数・候補数・失敗数・カバー率・利用可否をクラウド運用状況へ追加。",
         "0.12.5" to "保存済み通知設定をアプリ起動時に自動再予約し、更新後の手動再保存を不要化。",
         "0.12.4" to "通知権限がない状態を成功扱いしないよう修正し、クラウド通知処理をネットワーク接続時だけ実行。",
         "0.12.3" to "登録確認メール送信を成功表示に変更し、保存済みログインから別アカウントへ切り替える操作を追加。",

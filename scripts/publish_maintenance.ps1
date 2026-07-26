@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-notification-reschedule",
+    [string]$Branch = "agent/cloud-operations-diagnostics",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -67,6 +67,7 @@ $publishFiles = @(
     "tests/test_api.py",
     "tests/test_cloud_batch.py",
     "tests/test_cloud_preferences.py",
+    "tests/test_cloud_candidates.py",
     "supabase/screening_preferences.sql",
     "supabase/screening_results.sql",
     "supabase/screening_candidates.sql",
@@ -80,7 +81,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Reschedule saved Android notifications"
+    & $git commit -m "Add cloud operations diagnostics"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -116,8 +117,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Reschedule saved Android notifications" `
-    --body "Automatically reapplies a previously saved notification schedule whenever the app starts, including after an app update. Bumps the Android app to 0.12.5.").Trim()
+    --title "Add cloud operations diagnostics" `
+    --body "Publishes full-market coverage metadata to Supabase and shows universe, evaluated, candidate, failure, coverage, and readiness status in Android. Bumps the Android app to 0.13.0.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

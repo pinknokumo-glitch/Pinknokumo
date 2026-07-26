@@ -10,6 +10,13 @@ data class CandidatePool(
     val poolDate: String?,
     val codes: List<String>,
     val updatedAt: String? = null,
+    val universeCount: Int? = null,
+    val evaluatedCount: Int? = null,
+    val candidateCount: Int? = null,
+    val failedCount: Int? = null,
+    val coverageRatio: Double? = null,
+    val status: String? = null,
+    val usable: Boolean? = null,
 )
 data class Price(val date: String, val close: Double)
 data class HistoryItem(

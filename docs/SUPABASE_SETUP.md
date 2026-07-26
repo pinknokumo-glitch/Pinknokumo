@@ -70,7 +70,11 @@ Preference writes remain restricted by RLS.
 1. Create a Supabase Free project.
 2. Create one application user with email/password or magic link.
 3. Open the SQL Editor and run `supabase/screening_preferences.sql`.
-4. Insert the initial preference while authenticated, or use the dashboard for the first row.
-5. Register the three server values above as GitHub Actions secrets.
+4. Run `supabase/screening_candidates.sql` in full. It is idempotent and creates both
+   the candidate rows and `screening_candidate_runs`, which records universe coverage
+   even when the candidate count is zero.
+5. Run `supabase/screening_results.sql` and `supabase/backtest_requests.sql`.
+6. Insert the initial preference while authenticated, or use the dashboard for the first row.
+7. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
