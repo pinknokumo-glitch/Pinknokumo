@@ -32,6 +32,21 @@ create table if not exists public.screening_candidate_runs (
   updated_at timestamptz not null default now()
 );
 
+-- CREATE TABLE IF NOT EXISTS does not add columns to an existing older table.
+-- Keep this migration rerunnable so upgrades work without dropping user data.
+alter table public.screening_candidate_runs
+  add column if not exists universe_count integer not null default 0,
+  add column if not exists evaluated_count integer not null default 0,
+  add column if not exists candidate_count integer not null default 0,
+  add column if not exists failed_count integer not null default 0,
+  add column if not exists coverage_ratio double precision not null default 0,
+  add column if not exists status text not null default 'pending',
+  add column if not exists usable boolean not null default false,
+  add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists screening_candidate_runs_pool_date_idx
+on public.screening_candidate_runs (pool_date);
+
 alter table public.screening_candidate_runs enable row level security;
 
 grant select on table public.screening_candidate_runs to authenticated;
