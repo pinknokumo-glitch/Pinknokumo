@@ -283,17 +283,16 @@ def _compute_group(
                 target_return_percent=preference.target_return_percent,
             )
         with database.connect() as connection:
-            screener = Screener(
-                connection, indicator_config, resolved,
-                candidate_codes=[str(hit["code"]) for hit in hits],
-            )
-            hits = screener.run(effective_profile, effective_rule)
             repository = StockRepository(connection)
             for hit in hits:
                 code = str(hit["code"])
                 result = repository.latest_backtest_result(code, effective_profile)
                 if result:
                     summary = result.get("summary", {})
+                    score = result.get("expectation", {}).get("score")
+                    hit["expectation_score"] = (
+                        float(score) if score is not None else None
+                    )
                     hit["outcome_probability_percent"] = summary.get(
                         "outcome_probability_percent"
                     )
@@ -310,6 +309,18 @@ def _compute_group(
                 comments[code] = AnalysisCommentary.integrated_comment(
                     hit, backtest_comment
                 )
+        # The entry decision is made from the common pre-backfill snapshot.
+        # Historical rows downloaded for expectation analysis must not silently
+        # remove an already selected stock by screening it a second time.
+        hits = sorted(
+            hits,
+            key=lambda item: (
+                item["expectation_score"]
+                if item.get("expectation_score") is not None
+                else float("-inf")
+            ),
+            reverse=True,
+        )
     screening_date = _latest_trade_date(database)
     return {
         "screening_date": str(screening_date),

@@ -128,6 +128,26 @@ class CloudBatchTests(unittest.TestCase):
             )
             self.assertEqual(missing, ["7203"])
 
+    def test_backtest_score_can_sort_without_rescreening_candidates(self) -> None:
+        hits = [
+            {"code": "11110", "expectation_score": 30.0},
+            {"code": "22220", "expectation_score": 80.0},
+            {"code": "33330", "expectation_score": None},
+        ]
+        ordered = sorted(
+            hits,
+            key=lambda item: (
+                item["expectation_score"]
+                if item.get("expectation_score") is not None
+                else float("-inf")
+            ),
+            reverse=True,
+        )
+        self.assertEqual(
+            [item["code"] for item in ordered],
+            ["22220", "11110", "33330"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
