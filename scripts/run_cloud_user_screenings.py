@@ -52,6 +52,7 @@ def main() -> int:
         max_hits_per_group=int(
             settings.get("cloud_screening", {}).get("max_hits_per_group", 100)
         ),
+        settings=settings,
     )
     result["invalid_preference_count"] = len(client.validation_errors)
     result["invalid_preferences"] = client.validation_errors
@@ -59,6 +60,7 @@ def main() -> int:
         client.validation_errors
         or result["failed_group_count"]
         or result["failed_user_count"]
+        or result["history_backfill_failed_count"]
     )
     database.save_job_run(
         "cloud_user_screening",

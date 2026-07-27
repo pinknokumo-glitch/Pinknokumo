@@ -96,3 +96,14 @@ Preference writes remain restricted by RLS.
 11. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
+# Long-horizon expectation backtests
+
+When a saved preference uses a long holding period such as 360 business days,
+the daily cloud job backfills up to 10 years of price history only for stocks
+that matched that user's screening conditions. Downloads are intentionally
+split into small batches. This avoids a full-market historical reload while
+giving the expectation backtest enough entry and future-price observations.
+
+If sufficient history is not available (for example, a recently listed
+company), Android reports that the reference price could not be calculated
+instead of hiding the result.

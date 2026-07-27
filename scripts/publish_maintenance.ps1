@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/conditional-price-estimates",
+    [string]$Branch = "agent/long-history-backfill",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -45,6 +45,7 @@ $publishFiles = @(
     "docs/SUPABASE_SETUP.md",
     "docs/ANDROID_DISTRIBUTION.md",
     "modules/backtest.py",
+    "modules/backtest_history.py",
     "modules/batch_backtest.py",
     "modules/cloud_batch.py",
     "modules/cloud_candidates.py",
@@ -67,6 +68,7 @@ $publishFiles = @(
     "scripts/update_signed_android.ps1",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
+    "tests/test_backtest_history.py",
     "tests/test_backtest.py",
     "tests/test_api.py",
     "tests/test_cloud_batch.py",
@@ -92,7 +94,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Add conditional price estimates"
+    & $git commit -m "Backfill history for long expectation horizons"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -130,8 +132,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Add entry and exit strategy backtests" `
-    --body "Adds below/above operators, long and short trade directions, condition-triggered exits, staged manual RSI relaxation, and separate entry/exit condition reporting.").Trim()
+    --title "Backfill history for long expectation horizons" `
+    --body "Fetches bounded 10-year history only for matched stocks when long expectation horizons need it, recomputes their backtests, and explains insufficient-history results in Android.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

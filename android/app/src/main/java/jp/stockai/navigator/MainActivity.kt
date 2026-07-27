@@ -727,7 +727,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.17.0",
+        "バージョン" to "StockAI Navigator 0.17.1",
+        "0.17.1" to "長期検証の履歴不足を明示し、達成事例0件の場合も参考価格の算出状態を表示。",
         "0.17.0" to "期待値条件の達成事例から参考株価の中央値・価格帯・検証件数・到達日数を表示。",
         "0.16.0" to "期待値の検証期間を最大1000営業日へ拡張し、360営業日などの長期検証に対応。",
         "0.15.0" to "期待値を条件到達、期間末の騰落、期間内の価格改善、目標騰落率到達から選択でき、達成確率を表示。",
@@ -1118,6 +1119,21 @@ private fun DeliveryResultsScreen(
                                 )
                                 Text(
                                     "過去の同条件に基づく参考値で、将来の株価を保証するものではありません。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (result.referencePrice != null &&
+                                result.estimatedPriceMedian == null
+                            ) {
+                                Text("条件達成時の参考価格: 算出できません")
+                                Text("達成事例: ${result.estimateSampleCount}件")
+                                Text(
+                                    if (result.outcomeProbabilityPercent == null) {
+                                        "検証に必要な履歴または入口事例が不足しています。"
+                                    } else {
+                                        "検証期間内に期待値条件へ到達した事例がありません。"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
