@@ -296,6 +296,15 @@ def _compute_group(
                     hit["outcome_probability_percent"] = summary.get(
                         "outcome_probability_percent"
                     )
+                    hit["average_return_percent"] = summary.get(
+                        "average_return_percent"
+                    )
+                    hit["win_rate_percent"] = summary.get(
+                        "win_rate_percent"
+                    )
+                    hit["max_drawdown_percent"] = summary.get(
+                        "max_drawdown_percent"
+                    )
                     hit.update(_estimated_price_fields(
                         hit.get("daily.close"),
                         summary,

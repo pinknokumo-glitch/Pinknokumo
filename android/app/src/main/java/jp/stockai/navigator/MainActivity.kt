@@ -431,31 +431,73 @@ private fun StockAiApp(
     initialPage: String = "home",
     onLogout: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val favoriteStore = remember(session.userId) {
+        FavoriteStore(context.applicationContext, session.userId)
+    }
+    val favorites = remember(session.userId) {
+        mutableStateListOf<FavoriteStock>().apply { addAll(favoriteStore.load()) }
+    }
+    fun toggleFavorite(code: String, companyName: String?) {
+        val existing = favorites.indexOfFirst { it.code == code }
+        if (existing >= 0) {
+            favorites.removeAt(existing)
+        } else {
+            favorites.add(FavoriteStock(code, companyName))
+        }
+        favoriteStore.save(favorites)
+    }
     var selectedCode by remember { mutableStateOf<String?>(null) }
+    var selectedResult by remember { mutableStateOf<CloudScreeningResult?>(null) }
     var showWatchlist by remember { mutableStateOf(false) }
     var page by remember(initialPage) { mutableStateOf(initialPage) }
-    BackHandler(enabled = selectedCode != null || showWatchlist || page != "home") {
+    BackHandler(
+        enabled = selectedResult != null ||
+            selectedCode != null ||
+            showWatchlist ||
+            page != "home"
+    ) {
         when {
+            selectedResult != null -> selectedResult = null
             selectedCode != null -> selectedCode = null
             showWatchlist -> showWatchlist = false
             else -> page = "home"
         }
     }
     when {
+        selectedResult != null -> CloudResultDetailScreen(
+            result = selectedResult!!,
+            isFavorite = favorites.any { it.code == selectedResult!!.code },
+            onToggleFavorite = {
+                toggleFavorite(selectedResult!!.code, selectedResult!!.companyName)
+            },
+            onBack = { selectedResult = null },
+        )
         selectedCode != null -> StockDetailScreen(
             code = selectedCode!!,
             onBack = { selectedCode = null },
         )
         showWatchlist -> WatchlistScreen(
+            favorites = favorites,
             onBack = { showWatchlist = false },
-            onSelect = { selectedCode = it; showWatchlist = false },
+            onSelect = { favorite ->
+                selectedCode = favorite.code
+                showWatchlist = false
+            },
+            onRemove = { favorite ->
+                toggleFavorite(favorite.code, favorite.companyName)
+            },
         )
         else -> when (page) {
             "home" -> HomeMenuScreen(onOpen = { page = it })
             "results" -> DeliveryResultsScreen(
                 session,
+                favoriteCodes = favorites.map { it.code }.toSet(),
                 onBack = { page = "home" },
-                onSelect = { selectedCode = it },
+                onSelect = { selectedResult = it },
+                onToggleFavorite = {
+                    toggleFavorite(it.code, it.companyName)
+                },
             )
             "candidates" -> CandidatePoolScreen(
                 session,
@@ -474,6 +516,7 @@ private fun StockAiApp(
                 onSelect = { selectedCode = it },
             )
             "operations" -> OperationsScreen(
+                        favoriteCount = favorites.size,
                         onBack = { page = "home" },
                         onWatchlist = { showWatchlist = true },
             )
@@ -727,7 +770,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.17.1",
+        "バージョン" to "StockAI Navigator 0.18.0",
+        "0.18.0" to "配信結果をスコア・平均リターン・勝率・最大含み損の一覧へ簡潔化。タップ式の分析詳細とユーザー別の監視登録を追加。",
         "0.17.1" to "長期検証の履歴不足を明示し、達成事例0件の場合も参考価格の算出状態を表示。",
         "0.17.0" to "期待値条件の達成事例から参考株価の中央値・価格帯・検証件数・到達日数を表示。",
         "0.16.0" to "期待値の検証期間を最大1000営業日へ拡張し、360営業日などの長期検証に対応。",
@@ -1002,8 +1046,10 @@ private fun ConditionFieldsPanel(
 @Composable
 private fun DeliveryResultsScreen(
     session: SupabaseSession,
+    favoriteCodes: Set<String>,
     onBack: () -> Unit,
-    onSelect: (String) -> Unit,
+    onSelect: (CloudScreeningResult) -> Unit,
+    onToggleFavorite: (CloudScreeningResult) -> Unit,
 ) {
     val cloud = remember { SupabaseClient() }
     var results by remember { mutableStateOf<List<CloudScreeningResult>>(emptyList()) }
@@ -1033,26 +1079,25 @@ private fun DeliveryResultsScreen(
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
             run?.let { latest ->
                 item {
-                    Text("${latest.screeningDate} / 該当${latest.hitCount}件")
-                    Text("処理状態: ${screeningRunStatus(latest.hitCount)}")
-                    Text("結果更新: ${formatJst(latest.updatedAt)}")
-                    Text("売買方向: ${tradeDirectionLabel(latest.tradeDirection)}")
-                    Text("期待値判定: ${evaluationModeLabel(latest.evaluationMode, latest.targetReturnPercent)}")
-                    Text("検証期間: ${latest.holdingDays}営業日以内")
-                    Text("使用した緩和: ${latest.relaxationLabel ?: "基準条件"}")
-                    latest.conditionSummary?.let {
-                        Text("入口（ソート）条件: ${formatConditionSummary(it)}")
-                    }
-                    latest.expectationConditionSummary?.let {
-                        Text("出口（期待値）条件: ${formatConditionSummary(it)}")
-                    }
-                    if (latest.relaxationCounts.isNotEmpty()) {
-                        Text(
-                            "段階別件数: " +
-                                latest.relaxationCounts.joinToString(" / ") {
-                                    "${it.stage} ${it.hitCount}件"
-                                }
-                        )
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                "${latest.screeningDate}　${latest.hitCount}銘柄",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                "${latest.holdingDays}営業日以内の検証 / " +
+                                    "${latest.relaxationLabel ?: "基準条件"}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "更新 ${formatJst(latest.updatedAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(12.dp))
                 }
@@ -1078,80 +1123,256 @@ private fun DeliveryResultsScreen(
                 }
             }
             items(results) { result ->
-                val company = result.companyName?.let { " / $it" } ?: ""
-                val score = result.expectationScore?.let { String.format("%.1f", it) } ?: "未算出"
-                ListItem(
-                    headlineContent = { Text("${result.position}. ${result.code}$company") },
-                    supportingContent = {
-                        Column {
-                            Text("期待値スコア $score")
-                            result.outcomeProbabilityPercent?.let {
+                val isFavorite = result.code in favoriteCodes
+                ElevatedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .clickable { onSelect(result) },
+                ) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    "${evaluationModeLabel(result.evaluationMode, result.targetReturnPercent)}の確率 " +
-                                        String.format("%.1f%%", it)
+                                    "${result.position}. ${result.code}",
+                                    style = MaterialTheme.typography.titleMedium,
                                 )
-                            }
-                            result.referencePrice?.let {
-                                Text("配信時の基準価格: ${String.format("%,.2f円", it)}")
-                            }
-                            result.estimatedPriceMedian?.let { median ->
-                                Text(
-                                    "条件達成時の参考価格（中央値）: " +
-                                        String.format("%,.2f円", median)
-                                )
-                                if (result.estimatedPriceLow != null &&
-                                    result.estimatedPriceHigh != null
-                                ) {
+                                result.companyName?.let {
                                     Text(
-                                        "過去事例の中心50%価格帯: " +
-                                            String.format(
-                                                "%,.2f～%,.2f円",
-                                                result.estimatedPriceLow,
-                                                result.estimatedPriceHigh,
-                                            )
+                                        it,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                Text(
-                                    "達成事例: ${result.estimateSampleCount}件" +
-                                        (result.medianDaysToOutcome?.let {
-                                            " / 到達まで中央値 ${String.format("%.1f", it)}営業日"
-                                        } ?: "")
-                                )
-                                Text(
-                                    "過去の同条件に基づく参考値で、将来の株価を保証するものではありません。",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
                             }
-                            if (result.referencePrice != null &&
-                                result.estimatedPriceMedian == null
-                            ) {
-                                Text("条件達成時の参考価格: 算出できません")
-                                Text("達成事例: ${result.estimateSampleCount}件")
-                                Text(
-                                    if (result.outcomeProbabilityPercent == null) {
-                                        "検証に必要な履歴または入口事例が不足しています。"
-                                    } else {
-                                        "検証期間内に期待値条件へ到達した事例がありません。"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            TextButton(onClick = { onToggleFavorite(result) }) {
+                                Text(if (isFavorite) "★ 監視中" else "☆ 監視")
                             }
-                            Text("検証期間 ${result.holdingDays ?: "-"}営業日以内")
-                            result.conditionSummary?.let {
-                                Text("入口条件: ${formatConditionSummary(it)}")
-                            }
-                            result.expectationConditionSummary?.let {
-                                Text("出口条件: ${formatConditionSummary(it)}")
-                            }
-                            result.comment?.let { Text(it) }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().clickable { onSelect(result.code) },
-                )
-                HorizontalDivider()
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            ResultMetric(
+                                "スコア",
+                                result.expectationScore.percentValue(false),
+                                Modifier.weight(1f),
+                            )
+                            ResultMetric(
+                                "平均リターン",
+                                result.averageReturnPercent.percentValue(),
+                                Modifier.weight(1f),
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            ResultMetric(
+                                "勝率",
+                                result.winRatePercent.percentValue(),
+                                Modifier.weight(1f),
+                            )
+                            ResultMetric(
+                                "最大含み損",
+                                result.maxDrawdownPercent.percentValue(),
+                                Modifier.weight(1f),
+                            )
+                        }
+                        Text(
+                            "タップして分析詳細を表示",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ResultMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(value, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun CloudResultDetailScreen(
+    result: CloudScreeningResult,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(result.code) },
+                navigationIcon = { TextButton(onClick = onBack) { Text("戻る") } },
+                actions = {
+                    TextButton(onClick = onToggleFavorite) {
+                        Text(if (isFavorite) "★ 監視中" else "☆ 監視へ追加")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            Modifier.padding(padding).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Text(
+                    result.companyName ?: result.code,
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text(
+                    "${result.screeningDate} / ${result.holdingDays ?: "-"}営業日以内",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(Modifier.fillMaxWidth()) {
+                            ResultMetric(
+                                "スコア",
+                                result.expectationScore.percentValue(false),
+                                Modifier.weight(1f),
+                            )
+                            ResultMetric(
+                                "平均リターン",
+                                result.averageReturnPercent.percentValue(),
+                                Modifier.weight(1f),
+                            )
+                        }
+                        Row(Modifier.fillMaxWidth()) {
+                            ResultMetric(
+                                "勝率",
+                                result.winRatePercent.percentValue(),
+                                Modifier.weight(1f),
+                            )
+                            ResultMetric(
+                                "最大含み損",
+                                result.maxDrawdownPercent.percentValue(),
+                                Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+            result.referencePrice?.let { price ->
+                item {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            Text("価格シミュレーション", style = MaterialTheme.typography.titleMedium)
+                            Text("配信時価格 ${String.format("%,.2f円", price)}")
+                            result.estimatedPriceMedian?.let {
+                                Text("条件達成時の参考価格中央値 ${String.format("%,.2f円", it)}")
+                            }
+                            if (
+                                result.estimatedPriceLow != null &&
+                                result.estimatedPriceHigh != null
+                            ) {
+                                Text(
+                                    "中心50%価格帯 " +
+                                        String.format(
+                                            "%,.2f～%,.2f円",
+                                            result.estimatedPriceLow,
+                                            result.estimatedPriceHigh,
+                                        )
+                                )
+                            }
+                            Text("達成事例 ${result.estimateSampleCount}件")
+                            result.medianDaysToOutcome?.let {
+                                Text("到達まで中央値 ${String.format("%.1f", it)}営業日")
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                AnalysisDetailCard(
+                    "テクニカル分析",
+                    analysisSection(result.comment, "テクニカル"),
+                )
+            }
+            item {
+                AnalysisDetailCard(
+                    "ファンダメンタル分析",
+                    analysisSection(result.comment, "ファンダメンタル"),
+                )
+            }
+            item {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Text("検証条件", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "評価方法: " +
+                                evaluationModeLabel(
+                                    result.evaluationMode,
+                                    result.targetReturnPercent,
+                                )
+                        )
+                        result.conditionSummary?.let {
+                            Text("買い・入口: ${formatConditionSummary(it)}")
+                        }
+                        result.expectationConditionSummary?.let {
+                            Text("売却・達成: ${formatConditionSummary(it)}")
+                        }
+                    }
+                }
+            }
+            item {
+                AnalysisDetailCard(
+                    "コメント",
+                    listOfNotNull(
+                        analysisSection(result.comment, "バックテスト"),
+                        analysisSection(result.comment, "総合所見"),
+                    ).filter { it.isNotBlank() }.joinToString("\n\n")
+                        .ifBlank { result.comment ?: "コメントはありません。" },
+                )
+            }
+            item {
+                Text(
+                    "過去データに基づく参考情報であり、将来の価格や利益を保証しません。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalysisDetailCard(title: String, body: String?) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(body?.takeIf { it.isNotBlank() } ?: "取得できる情報がありません。")
         }
     }
 }
@@ -2256,7 +2477,11 @@ private fun ScreeningScreen(
 }
 
 @Composable
-private fun OperationsScreen(onBack: () -> Unit, onWatchlist: () -> Unit) {
+private fun OperationsScreen(
+    favoriteCount: Int,
+    onBack: () -> Unit,
+    onWatchlist: () -> Unit,
+) {
     var report by remember { mutableStateOf<DailyReport?>(null) }
     var portfolio by remember { mutableStateOf<PortfolioSummary?>(null) }
     var operations by remember { mutableStateOf<OperationsStatus?>(null) }
@@ -2286,6 +2511,25 @@ private fun OperationsScreen(onBack: () -> Unit, onWatchlist: () -> Unit) {
         )
     }) { padding ->
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
+            item {
+                ElevatedCard(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onWatchlist)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("監視対象", style = MaterialTheme.typography.titleMedium)
+                            Text("${favoriteCount}銘柄を端末で監視登録中")
+                        }
+                        Text("開く")
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             error?.let { item { Text("APIへ接続できません: $it", color = MaterialTheme.colorScheme.error) } }
             operations?.let { status ->
                 item {
@@ -2349,32 +2593,38 @@ private fun OperationsScreen(onBack: () -> Unit, onWatchlist: () -> Unit) {
 }
 
 @Composable
-private fun WatchlistScreen(onBack: () -> Unit, onSelect: (String) -> Unit) {
-    var watchlist by remember { mutableStateOf<List<WatchlistItem>>(emptyList()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var refreshToken by remember { mutableIntStateOf(0) }
-    LaunchedEffect(refreshToken) {
-        error = null
-        runCatching { withContext(Dispatchers.IO) { ApiClient().watchlist() } }
-            .onSuccess { watchlist = it }.onFailure { error = it.message }
-    }
+private fun WatchlistScreen(
+    favorites: List<FavoriteStock>,
+    onBack: () -> Unit,
+    onSelect: (FavoriteStock) -> Unit,
+    onRemove: (FavoriteStock) -> Unit,
+) {
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("ウォッチリスト") },
+            title = { Text("監視対象") },
             navigationIcon = { TextButton(onClick = onBack) { Text("戻る") } },
-            actions = { TextButton(onClick = { refreshToken++ }) { Text("更新") } },
         )
     }) { padding ->
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
-            error?.let { item { Text("APIへ接続できません: $it", color = MaterialTheme.colorScheme.error) } }
-            if (watchlist.isEmpty() && error == null) item { Text("監視銘柄はありません") }
-            items(watchlist) { item ->
-                val company = item.companyName?.let { " / $it" } ?: ""
-                val note = item.note ?: ""
+            if (favorites.isEmpty()) {
+                item {
+                    Text("監視対象はありません。配信結果の「☆ 監視」から追加できます。")
+                }
+            }
+            items(favorites, key = { it.code }) { favorite ->
                 ListItem(
-                    headlineContent = { Text("${item.code}$company") },
-                    supportingContent = { Text(note) },
-                    modifier = Modifier.fillMaxWidth().clickable { onSelect(item.code) },
+                    headlineContent = { Text(favorite.code) },
+                    supportingContent = {
+                        Text(favorite.companyName ?: "銘柄情報を確認")
+                    },
+                    trailingContent = {
+                        TextButton(onClick = { onRemove(favorite) }) {
+                            Text("解除")
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(favorite) },
                 )
                 HorizontalDivider()
             }
@@ -2523,6 +2773,22 @@ private fun formatConditionSummary(summary: String): String {
         }
         parts.joinToString(if (logic == "all") " かつ " else " または ")
     }.getOrDefault(summary)
+}
+
+private fun Double?.percentValue(includeSign: Boolean = true): String {
+    if (this == null || !isFinite()) return "—"
+    val pattern = if (includeSign) "%+.1f%%" else "%.1f"
+    return String.format(pattern, this)
+}
+
+private fun analysisSection(comment: String?, title: String): String? {
+    if (comment.isNullOrBlank()) return null
+    val marker = "【$title】"
+    val start = comment.indexOf(marker)
+    if (start < 0) return null
+    val bodyStart = start + marker.length
+    val next = comment.indexOf("【", bodyStart)
+    return comment.substring(bodyStart, if (next >= 0) next else comment.length).trim()
 }
 
 private fun screeningRunStatus(hitCount: Int): String =

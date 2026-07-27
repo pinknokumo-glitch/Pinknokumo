@@ -36,6 +36,9 @@ data class CloudScreeningResult(
     val evaluationMode: String,
     val targetReturnPercent: Double,
     val outcomeProbabilityPercent: Double?,
+    val averageReturnPercent: Double?,
+    val winRatePercent: Double?,
+    val maxDrawdownPercent: Double?,
     val referencePrice: Double?,
     val estimatedPriceMedian: Double?,
     val estimatedPriceLow: Double?,
@@ -246,6 +249,7 @@ class SupabaseClient(
                 "&select=screening_date,profile_name,position,code,company_name,expectation_score,comment,chart_url" +
                 ",holding_days,condition_summary,expectation_condition_summary,trade_direction" +
                 ",expectation_evaluation_mode,target_return_percent,outcome_probability_percent" +
+                ",average_return_percent,win_rate_percent,max_drawdown_percent" +
                 ",reference_price,estimated_price_median,estimated_price_low,estimated_price_high" +
                 ",estimate_sample_count,median_days_to_outcome" +
                 "&order=screening_date.desc,position.asc&limit=$safeLimit",
@@ -277,6 +281,15 @@ class SupabaseClient(
                     targetReturnPercent = row.optDouble("target_return_percent", 5.0),
                     outcomeProbabilityPercent = row.optDouble(
                         "outcome_probability_percent"
+                    ).takeUnless { it.isNaN() },
+                    averageReturnPercent = row.optDouble(
+                        "average_return_percent"
+                    ).takeUnless { it.isNaN() },
+                    winRatePercent = row.optDouble(
+                        "win_rate_percent"
+                    ).takeUnless { it.isNaN() },
+                    maxDrawdownPercent = row.optDouble(
+                        "max_drawdown_percent"
                     ).takeUnless { it.isNaN() },
                     referencePrice = row.optDouble(
                         "reference_price"
