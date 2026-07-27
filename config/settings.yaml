@@ -41,6 +41,10 @@ cloud_screening:
   # Free-tier guardrails. Identical user settings are still calculated only once.
   max_groups: 50
   max_hits_per_group: 100
+  # Backfill only matched stocks when long horizons need more history.
+  backtest_history_period: "10y"
+  backtest_history_chunk_size: 5
+  backtest_minimum_signal_sessions: 252
 
 screening_universe:
   markets: [プライム, スタンダード, グロース]

@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 
 from modules.ai_comment import AnalysisCommentary
 from modules.batch_backtest import BatchBacktester
+from modules.backtest_history import BacktestHistoryBackfill
 from modules.cloud_preferences import (
     ScreeningPreference,
     apply_expectation_preference,
@@ -66,6 +67,7 @@ def run_cloud_batch(
     candidate_codes: list[str] | None = None,
     max_groups: int = 50,
     max_hits_per_group: int = 100,
+    settings: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     started_at = time.monotonic()
     groups = group_preferences(preferences)
@@ -102,6 +104,7 @@ def run_cloud_batch(
                 indicator_config, backtest_config, scoring_config,
                 snapshots, company_names, rule_engine,
                 max_hits_per_group=max_hits_per_group,
+                settings=settings,
             )
         except Exception as error:
             failed_groups.append({
@@ -162,6 +165,7 @@ def run_cloud_batch(
             "relaxation_counts": outcome["relaxation_counts"],
             "backtest_requested_count": outcome["backtest_requested_count"],
             "backtest_reused_count": outcome["backtest_reused_count"],
+            "history_backfill": outcome["history_backfill"],
         })
     return {
         "preference_count": len(preferences),
@@ -169,6 +173,10 @@ def run_cloud_batch(
         "published_user_count": published_users,
         "failed_group_count": len(failed_groups),
         "failed_user_count": len(failed_users),
+        "history_backfill_failed_count": sum(
+            int(group["history_backfill"].get("failed_count", 0))
+            for group in processed_groups
+        ),
         "failed_groups": failed_groups,
         "failed_users": failed_users,
         "groups": processed_groups,
@@ -193,6 +201,7 @@ def _compute_group(
     company_names: Mapping[str, object],
     rule_engine: RuleEngine,
     max_hits_per_group: int = 100,
+    settings: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     resolved, base_profile = apply_preference(
         preference, options, screening_config
@@ -237,12 +246,27 @@ def _compute_group(
     comments: dict[str, str] = {}
     backtest_requested_count = 0
     backtest_reused_count = 0
+    history_backfill: dict[str, object] = {
+        "requested_count": 0,
+        "updated_count": 0,
+        "failed_count": 0,
+        "updated_codes": [],
+        "failed": [],
+    }
     if hits:
         hit_codes = [str(hit["code"]) for hit in hits]
+        if settings is not None:
+            history_backfill = BacktestHistoryBackfill(
+                database, settings
+            ).run(hit_codes, preference.holding_days)
         current_date = _latest_trade_date(database)
         missing_codes = _codes_requiring_backtest(
             database, hit_codes, effective_profile, current_date
         )
+        missing_codes = list(dict.fromkeys([
+            *history_backfill.get("updated_codes", []),
+            *missing_codes,
+        ]))
         backtest_requested_count = len(missing_codes)
         backtest_reused_count = len(hit_codes) - len(missing_codes)
         if missing_codes:
@@ -302,6 +326,7 @@ def _compute_group(
         "relaxation_counts": relaxation_counts,
         "backtest_requested_count": backtest_requested_count,
         "backtest_reused_count": backtest_reused_count,
+        "history_backfill": history_backfill,
     }
 
 
