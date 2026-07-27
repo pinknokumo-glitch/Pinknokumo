@@ -478,10 +478,11 @@ private fun StockAiApp(
             onBack = { selectedCode = null },
         )
         showWatchlist -> WatchlistScreen(
+            session = session,
             favorites = favorites,
             onBack = { showWatchlist = false },
-            onSelect = { favorite ->
-                selectedCode = favorite.code
+            onSelect = { result ->
+                selectedResult = result
                 showWatchlist = false
             },
             onRemove = { favorite ->
@@ -770,7 +771,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.18.0",
+        "バージョン" to "StockAI Navigator 0.18.1",
+        "0.18.1" to "過去事例0件をスコア0.0と誤表示しないよう修正。監視対象から最新のクラウド分析詳細を表示。",
         "0.18.0" to "配信結果をスコア・平均リターン・勝率・最大含み損の一覧へ簡潔化。タップ式の分析詳細とユーザー別の監視登録を追加。",
         "0.17.1" to "長期検証の履歴不足を明示し、達成事例0件の場合も参考価格の算出状態を表示。",
         "0.17.0" to "期待値条件の達成事例から参考株価の中央値・価格帯・検証件数・到達日数を表示。",
@@ -1154,34 +1156,41 @@ private fun DeliveryResultsScreen(
                                 Text(if (isFavorite) "★ 監視中" else "☆ 監視")
                             }
                         }
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            ResultMetric(
-                                "スコア",
-                                result.expectationScore.percentValue(false),
-                                Modifier.weight(1f),
-                            )
-                            ResultMetric(
-                                "平均リターン",
-                                result.averageReturnPercent.percentValue(),
-                                Modifier.weight(1f),
-                            )
-                        }
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            ResultMetric(
-                                "勝率",
-                                result.winRatePercent.percentValue(),
-                                Modifier.weight(1f),
-                            )
-                            ResultMetric(
-                                "最大含み損",
-                                result.maxDrawdownPercent.percentValue(),
-                                Modifier.weight(1f),
+                        if (result.hasBacktestMetrics()) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                ResultMetric(
+                                    "スコア",
+                                    result.expectationScore.percentValue(false),
+                                    Modifier.weight(1f),
+                                )
+                                ResultMetric(
+                                    "平均リターン",
+                                    result.averageReturnPercent.percentValue(),
+                                    Modifier.weight(1f),
+                                )
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                ResultMetric(
+                                    "勝率",
+                                    result.winRatePercent.percentValue(),
+                                    Modifier.weight(1f),
+                                )
+                                ResultMetric(
+                                    "最大含み損",
+                                    result.maxDrawdownPercent.percentValue(),
+                                    Modifier.weight(1f),
+                                )
+                            }
+                        } else {
+                            Text(
+                                "過去に同じ期待値条件が成立した事例がなく、統計を算出できません。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Text(
@@ -1207,6 +1216,11 @@ private fun ResultMetric(label: String, value: String, modifier: Modifier = Modi
         Text(value, fontWeight = FontWeight.Bold)
     }
 }
+
+private fun CloudScreeningResult.hasBacktestMetrics(): Boolean =
+    averageReturnPercent != null &&
+        winRatePercent != null &&
+        maxDrawdownPercent != null
 
 @Composable
 private fun CloudResultDetailScreen(
@@ -1248,28 +1262,35 @@ private fun CloudResultDetailScreen(
                         Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Row(Modifier.fillMaxWidth()) {
-                            ResultMetric(
-                                "スコア",
-                                result.expectationScore.percentValue(false),
-                                Modifier.weight(1f),
-                            )
-                            ResultMetric(
-                                "平均リターン",
-                                result.averageReturnPercent.percentValue(),
-                                Modifier.weight(1f),
-                            )
-                        }
-                        Row(Modifier.fillMaxWidth()) {
-                            ResultMetric(
-                                "勝率",
-                                result.winRatePercent.percentValue(),
-                                Modifier.weight(1f),
-                            )
-                            ResultMetric(
-                                "最大含み損",
-                                result.maxDrawdownPercent.percentValue(),
-                                Modifier.weight(1f),
+                        if (result.hasBacktestMetrics()) {
+                            Row(Modifier.fillMaxWidth()) {
+                                ResultMetric(
+                                    "スコア",
+                                    result.expectationScore.percentValue(false),
+                                    Modifier.weight(1f),
+                                )
+                                ResultMetric(
+                                    "平均リターン",
+                                    result.averageReturnPercent.percentValue(),
+                                    Modifier.weight(1f),
+                                )
+                            }
+                            Row(Modifier.fillMaxWidth()) {
+                                ResultMetric(
+                                    "勝率",
+                                    result.winRatePercent.percentValue(),
+                                    Modifier.weight(1f),
+                                )
+                                ResultMetric(
+                                    "最大含み損",
+                                    result.maxDrawdownPercent.percentValue(),
+                                    Modifier.weight(1f),
+                                )
+                            }
+                        } else {
+                            Text(
+                                "この条件での過去事例がないため、バックテスト統計はありません。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -2594,11 +2615,25 @@ private fun OperationsScreen(
 
 @Composable
 private fun WatchlistScreen(
+    session: SupabaseSession,
     favorites: List<FavoriteStock>,
     onBack: () -> Unit,
-    onSelect: (FavoriteStock) -> Unit,
+    onSelect: (CloudScreeningResult) -> Unit,
     onRemove: (FavoriteStock) -> Unit,
 ) {
+    val cloud = remember { SupabaseClient() }
+    var latestResults by remember { mutableStateOf<List<CloudScreeningResult>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(session.userId) {
+        runCatching {
+            withContext(Dispatchers.IO) { cloud.loadLatestResults(session) }
+        }.onSuccess {
+            latestResults = it
+        }.onFailure {
+            error = it.message
+        }
+    }
+    val resultByCode = latestResults.associateBy { it.code }
     Scaffold(topBar = {
         TopAppBar(
             title = { Text("監視対象") },
@@ -2606,16 +2641,29 @@ private fun WatchlistScreen(
         )
     }) { padding ->
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
+            error?.let {
+                item {
+                    Text(
+                        "監視情報を取得できません: $it",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
             if (favorites.isEmpty()) {
                 item {
                     Text("監視対象はありません。配信結果の「☆ 監視」から追加できます。")
                 }
             }
             items(favorites, key = { it.code }) { favorite ->
+                val cloudResult = resultByCode[favorite.code]
                 ListItem(
                     headlineContent = { Text(favorite.code) },
                     supportingContent = {
-                        Text(favorite.companyName ?: "銘柄情報を確認")
+                        Text(
+                            favorite.companyName
+                                ?: cloudResult?.companyName
+                                ?: "銘柄情報を確認"
+                        )
                     },
                     trailingContent = {
                         TextButton(onClick = { onRemove(favorite) }) {
@@ -2624,8 +2672,17 @@ private fun WatchlistScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSelect(favorite) },
+                        .clickable(enabled = cloudResult != null) {
+                            cloudResult?.let(onSelect)
+                        },
                 )
+                if (cloudResult == null) {
+                    Text(
+                        "最新の配信結果に詳細がありません",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 HorizontalDivider()
             }
         }
