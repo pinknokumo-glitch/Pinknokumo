@@ -33,6 +33,9 @@ class CloudResultPublisherTests(unittest.TestCase):
                 [{
                     "code": "72030",
                     "expectation_score": 61.2,
+                    "average_return_percent": 8.4,
+                    "win_rate_percent": 62.5,
+                    "max_drawdown_percent": -12.3,
                     "reference_price": 1000.0,
                     "estimated_price_median": 1080.0,
                     "estimated_price_low": 1030.0,
@@ -52,6 +55,9 @@ class CloudResultPublisherTests(unittest.TestCase):
         self.assertEqual(payload[0]["user_id"], "user-1")
         self.assertEqual(payload[0]["position"], 1)
         self.assertEqual(payload[0]["expectation_score"], 61.2)
+        self.assertEqual(payload[0]["average_return_percent"], 8.4)
+        self.assertEqual(payload[0]["win_rate_percent"], 62.5)
+        self.assertEqual(payload[0]["max_drawdown_percent"], -12.3)
         self.assertEqual(payload[0]["holding_days"], 20)
         self.assertEqual(payload[0]["condition_summary"], '{"all":[]}')
         self.assertEqual(

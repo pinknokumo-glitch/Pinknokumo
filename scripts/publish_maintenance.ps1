@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/preserve-backfilled-candidates",
+    [string]$Branch = "agent/android-result-cards-watchlist",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -35,6 +35,7 @@ $publishFiles = @(
     "android/app/src/main/AndroidManifest.xml",
     "android/app/build.gradle.kts",
     "android/app/src/main/java/jp/stockai/navigator/ApiClient.kt",
+    "android/app/src/main/java/jp/stockai/navigator/FavoriteStore.kt",
     "android/app/src/main/java/jp/stockai/navigator/MainActivity.kt",
     "android/app/src/main/java/jp/stockai/navigator/SessionStore.kt",
     "android/app/src/main/java/jp/stockai/navigator/StockNotificationWorker.kt",
@@ -87,6 +88,7 @@ $publishFiles = @(
     "supabase/screening_results_update_grant.sql",
     "supabase/holding_period_upgrade.sql",
     "supabase/conditional_price_estimate_upgrade.sql",
+    "supabase/screening_result_summary_upgrade.sql",
     "tests/test_cloud_results.py",
     "tests/test_data_loader.py"
 )
@@ -94,7 +96,7 @@ $publishFiles = @(
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Preserve candidates during history backfill"
+    & $git commit -m "Simplify Android result cards"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 
@@ -132,8 +134,8 @@ finally {
 if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
 $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Preserve candidates during history backfill" `
-    --body "Keeps the original entry-screen decision stable while attaching long-history backtest scores and price estimates, preventing matched candidates from disappearing after the history download.").Trim()
+    --title "Simplify Android result cards and add watchlist" `
+    --body "Shows score, average return, win rate, and maximum drawdown in compact result cards; adds tap-through technical/fundamental details and a per-user on-device monitoring list.").Trim()
 if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
 Write-Output "Created pull request: $prUrl"
 

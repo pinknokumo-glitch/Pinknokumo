@@ -92,8 +92,11 @@ Preference writes remain restricted by RLS.
    `supabase/conditional_price_estimate_upgrade.sql` once. It preserves existing rows
    and adds the historical conditional median price, interquartile range, sample size,
    and median time-to-outcome fields.
-10. Insert the initial preference while authenticated, or use the dashboard for the first row.
-11. Register the three server values above as GitHub Actions secrets.
+10. Existing projects upgrading to StockAI 0.18.0 must run
+   `supabase/screening_result_summary_upgrade.sql` once. It preserves existing rows
+   and adds average return, win rate, and maximum drawdown for the compact result list.
+11. Insert the initial preference while authenticated, or use the dashboard for the first row.
+12. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
 # Long-horizon expectation backtests
