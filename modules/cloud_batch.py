@@ -54,6 +54,21 @@ def group_preferences(
     return dict(groups)
 
 
+def verified_expectation_score(
+    result: Mapping[str, object] | None,
+) -> float | None:
+    if not result:
+        return None
+    summary = result.get("summary")
+    expectation = result.get("expectation")
+    if not isinstance(summary, Mapping) or not isinstance(expectation, Mapping):
+        return None
+    if int(summary.get("trade_count") or 0) <= 0:
+        return None
+    score = expectation.get("score")
+    return float(score) if score is not None else None
+
+
 def run_cloud_batch(
     database: Database,
     preferences: Sequence[ScreeningPreference],
@@ -289,10 +304,7 @@ def _compute_group(
                 result = repository.latest_backtest_result(code, effective_profile)
                 if result:
                     summary = result.get("summary", {})
-                    score = result.get("expectation", {}).get("score")
-                    hit["expectation_score"] = (
-                        float(score) if score is not None else None
-                    )
+                    hit["expectation_score"] = verified_expectation_score(result)
                     hit["outcome_probability_percent"] = summary.get(
                         "outcome_probability_percent"
                     )

@@ -7,6 +7,7 @@ from modules.cloud_batch import (
     _estimated_price_fields,
     group_preferences,
     preference_signature,
+    verified_expectation_score,
 )
 from modules.cloud_preferences import ScreeningPreference
 from modules.database import Database
@@ -147,6 +148,20 @@ class CloudBatchTests(unittest.TestCase):
             [item["code"] for item in ordered],
             ["22220", "11110", "33330"],
         )
+
+    def test_zero_trade_backtest_does_not_publish_a_zero_score(self) -> None:
+        result = {
+            "summary": {"trade_count": 0},
+            "expectation": {"score": 0.0},
+        }
+        self.assertIsNone(verified_expectation_score(result))
+
+    def test_backtest_with_trades_publishes_its_score(self) -> None:
+        result = {
+            "summary": {"trade_count": 12},
+            "expectation": {"score": 64.5},
+        }
+        self.assertEqual(verified_expectation_score(result), 64.5)
 
 
 if __name__ == "__main__":
