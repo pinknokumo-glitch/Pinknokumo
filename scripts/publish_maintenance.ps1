@@ -48,11 +48,13 @@ $publishFiles = @(
     "modules/backtest.py",
     "modules/backtest_history.py",
     "modules/batch_backtest.py",
+    "modules/ai_comment.py",
     "modules/cloud_batch.py",
     "modules/cloud_candidates.py",
     "modules/cloud_preferences.py",
     "modules/data_loader.py",
     "modules/expectation.py",
+    "modules/fundamentals.py",
     "modules/morning_candidates.py",
     "modules/cloud_results.py",
     "modules/screener.py",
@@ -90,6 +92,7 @@ $publishFiles = @(
     "supabase/conditional_price_estimate_upgrade.sql",
     "supabase/screening_result_summary_upgrade.sql",
     "tests/test_cloud_results.py",
+    "tests/test_core.py",
     "tests/test_data_loader.py"
 )
 & $git add -- $publishFiles
