@@ -18,6 +18,13 @@ def _ratio(numerator: object, denominator: object) -> float | None:
     return top / bottom * 100 if top is not None and bottom not in (None, 0) else None
 
 
+def _growth(current: object, previous: object) -> float | None:
+    latest, prior = _number(current), _number(previous)
+    if latest is None or prior is None or prior <= 0:
+        return None
+    return (latest / prior - 1) * 100
+
+
 class FundamentalAnalyzer:
     def latest_values(self, financial: Mapping[str, object], close: object, trailing_dividends: object = None) -> dict[str, float]:
         values: dict[str, float] = {}
@@ -43,4 +50,21 @@ class FundamentalAnalyzer:
         dividends = _number(trailing_dividends)
         if price not in (None, 0) and dividends is not None:
             values["dividend_yield"] = dividends / price * 100
+        return values
+
+    def growth_values(
+        self,
+        current: Mapping[str, object],
+        previous: Mapping[str, object],
+    ) -> dict[str, float]:
+        values: dict[str, float] = {}
+        for name, source in (
+            ("sales_growth", "net_sales"),
+            ("operating_profit_growth", "operating_profit"),
+            ("profit_growth", "profit"),
+            ("eps_growth", "earnings_per_share"),
+        ):
+            value = _growth(current.get(source), previous.get(source))
+            if value is not None:
+                values[name] = value
         return values

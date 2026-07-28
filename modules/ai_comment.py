@@ -71,55 +71,234 @@ class AnalysisCommentary:
 
     @classmethod
     def _fundamental_comment(cls, values: Mapping[str, object]) -> str:
-        metrics = {
-            "PER": ("fundamental.per", "倍"), "PBR": ("fundamental.pbr", "倍"),
-            "ROE": ("fundamental.roe", "%"), "ROA": ("fundamental.roa", "%"),
-            "営業利益率": ("fundamental.operating_margin", "%"),
-            "自己資本比率": ("fundamental.equity_ratio", "%"),
-            "配当利回り": ("fundamental.dividend_yield", "%"),
-        }
-        available = [(label, cls._number(values, key), unit) for label, (key, unit) in metrics.items()]
-        available = [(label, value, unit) for label, value, unit in available if value is not None]
-        if not available:
+        if not any(
+            cls._number(values, f"fundamental.{metric}") is not None
+            for metric in (
+                "per", "pbr", "roe", "roa", "operating_margin",
+                "equity_ratio", "dividend_yield",
+            )
+        ):
             return "最新の財務指標を取得できていないため、ファンダメンタル評価は未実施です。"
         disclosed = values.get("fundamental.disclosed_date")
-        prefix = f"開示日{disclosed}の財務データを基準に、" if disclosed else "最新の取得済み財務データを基準に、"
-        text = prefix + "、".join(f"{label}{value:.1f}{unit}" for label, value, unit in available) + "です。"
-        notes = []
-        per = cls._number(values, "fundamental.per")
-        pbr = cls._number(values, "fundamental.pbr")
-        roe = cls._number(values, "fundamental.roe")
-        equity_ratio = cls._number(values, "fundamental.equity_ratio")
+        sector = str(values.get("fundamental.sector_name") or "業種未分類")
+        sample_count = int(cls._number(values, "industry.sample_count") or 0)
+        lines = [
+            (
+                f"開示日{disclosed}、業種「{sector}」の参考平均"
+                f"（比較可能{sample_count}銘柄）との比較です。"
+                if disclosed
+                else f"業種「{sector}」の参考平均（比較可能{sample_count}銘柄）との比較です。"
+            )
+        ]
+        cls._append_industry_line(
+            lines, values, "PER", "per", "倍", lower_is_better=True,
+            low_label="業界比で割安", high_label="業界比で割高",
+        )
+        cls._append_industry_line(
+            lines, values, "PBR", "pbr", "倍", lower_is_better=True,
+            low_label="業界比で割安", high_label="業界比で割高",
+        )
+        cls._append_industry_line(
+            lines, values, "ROE", "roe", "%", lower_is_better=False,
+            low_label="収益性は業界平均を下回る", high_label="収益性は業界平均を上回る",
+        )
+        cls._append_industry_line(
+            lines, values, "ROA", "roa", "%", lower_is_better=False,
+            low_label="資産効率は業界平均を下回る", high_label="資産効率は業界平均を上回る",
+        )
+        cls._append_industry_line(
+            lines, values, "営業利益率", "operating_margin", "%",
+            lower_is_better=False,
+            low_label="本業の収益性は業界平均を下回る",
+            high_label="本業の収益性は業界平均を上回る",
+        )
+        cls._append_industry_line(
+            lines, values, "自己資本比率", "equity_ratio", "%",
+            lower_is_better=False,
+            low_label="財務余力は業界平均を下回る",
+            high_label="財務余力は業界平均を上回る",
+        )
         cash_flow = cls._number(values, "fundamental.operating_cash_flow")
-        if per is not None:
-            notes.append("PERは一般的な目安で割安寄り" if 0 < per <= 15 else "PERは割安水準とは断定できない")
-        if pbr is not None and 0 < pbr <= 1:
-            notes.append("PBRは1倍以下")
-        if roe is not None:
-            notes.append("ROEは10%以上" if roe >= 10 else "ROEは10%未満")
-        if equity_ratio is not None:
-            notes.append("自己資本比率は40%以上" if equity_ratio >= 40 else "自己資本比率は40%未満")
         if cash_flow is not None:
-            notes.append("営業キャッシュフローはプラス" if cash_flow > 0 else "営業キャッシュフローはプラスではない")
-        if notes:
-            text += "確認点として、" + "、".join(notes) + "です。業種差や一時要因を含むため、単独指標での判断はできません。"
-        return text
+            lines.append(
+                f"・営業キャッシュフロー {cash_flow:,.0f}："
+                + ("プラスで資金創出は良好" if cash_flow > 0 else "マイナスで資金繰りに注意")
+            )
+        cls._append_industry_line(
+            lines, values, "配当利回り", "dividend_yield", "%",
+            lower_is_better=False,
+            low_label="配当水準は業界平均より低い",
+            high_label="配当水準は業界平均より高い",
+        )
+        for label, metric in (
+            ("売上成長率", "sales_growth"),
+            ("営業利益成長率", "operating_profit_growth"),
+            ("純利益成長率", "profit_growth"),
+            ("EPS成長率", "eps_growth"),
+        ):
+            cls._append_industry_line(
+                lines, values, label, metric, "%", lower_is_better=False,
+                low_label="成長性は業界平均を下回る",
+                high_label="成長性は業界平均を上回る",
+            )
+        lines.append("業界平均は取得対象銘柄から算出した参考値で、決算期や一時要因の違いを含みます。")
+        return "\n".join(lines)
+
+    @classmethod
+    def _append_industry_line(
+        cls,
+        lines: list[str],
+        values: Mapping[str, object],
+        label: str,
+        metric: str,
+        unit: str,
+        *,
+        lower_is_better: bool,
+        low_label: str,
+        high_label: str,
+    ) -> None:
+        value = cls._number(values, f"fundamental.{metric}")
+        if value is None:
+            return
+        average = cls._number(values, f"industry.{metric}")
+        if average is None:
+            judgment = cls._standalone_judgment(metric, value)
+            lines.append(f"・{label} {value:.1f}{unit}：{judgment}")
+            return
+        ratio = value / average if average not in (0, None) else 1.0
+        if 0.85 <= ratio <= 1.15:
+            judgment = "業界平均と同程度"
+        else:
+            value_is_low = ratio < 0.85
+            favorable = value_is_low if lower_is_better else not value_is_low
+            judgment = low_label if value_is_low else high_label
+            if not favorable and metric in {"roe", "roa", "operating_margin", "equity_ratio"}:
+                judgment += "ため注意"
+        lines.append(
+            f"・{label} {value:.1f}{unit}（業界平均{average:.1f}{unit}）：{judgment}"
+        )
+
+    @staticmethod
+    def _standalone_judgment(metric: str, value: float) -> str:
+        if metric == "per":
+            return "15倍以下で割安寄り" if 0 < value <= 15 else "業界比較データ不足"
+        if metric == "pbr":
+            return "1倍以下で割安寄り" if 0 < value <= 1 else "業界比較データ不足"
+        if metric == "roe":
+            return "10%以上で良好" if value >= 10 else "10%未満で注意"
+        if metric == "equity_ratio":
+            return "40%以上で比較的良好" if value >= 40 else "40%未満で注意"
+        if metric == "dividend_yield":
+            return "3.5%以上で高配当寄り" if value >= 3.5 else "業界比較データ不足"
+        if metric.endswith("growth"):
+            return "増加" if value > 0 else "減少しており注意"
+        return "業界比較データ不足"
 
     @classmethod
     def _overall_assessment(cls, values: Mapping[str, object]) -> str:
-        score = cls._number(values, "expectation_score")
-        roe = cls._number(values, "fundamental.roe")
-        equity_ratio = cls._number(values, "fundamental.equity_ratio")
-        positives = []
-        cautions = []
-        if roe is not None:
-            (positives if roe >= 10 else cautions).append("収益性")
-        if equity_ratio is not None:
-            (positives if equity_ratio >= 40 else cautions).append("財務健全性")
-        if score is not None:
-            (positives if score >= 60 else cautions).append("過去シグナルの期待値")
-        if not positives and not cautions:
+        technical = cls._technical_assessment(values)
+        valuation = cls._valuation_assessment(values)
+        profitability = cls._profitability_assessment(values)
+        finances = cls._financial_assessment(values)
+        growth = cls._growth_assessment(values)
+        dividend = cls._dividend_assessment(values)
+        if all(
+            item == "判断材料不足"
+            for item in (technical, valuation, profitability, finances, growth, dividend)
+        ):
             return "評価材料が不足しています。追加の決算情報と価格推移を確認してください。"
-        positive_text = "、".join(positives) + "は相対的な確認材料です。" if positives else ""
-        caution_text = "、".join(cautions) + "は注意が必要です。" if cautions else ""
-        return positive_text + caution_text + "テクニカルと財務の両面を確認し、売買判断ではなく候補選定情報として利用してください。"
+        contrast = ""
+        if technical in {"売られ過ぎ寄り", "上昇基調"} and growth == "成長性に注意":
+            contrast = (
+                "テクニカル面には反発・上昇の余地が見られますが、"
+                "ファンダメンタル面では成長性が弱く、将来性は慎重な評価が必要です。"
+            )
+        elif growth == "成長性に注意":
+            contrast = (
+                "ファンダメンタル面では成長性が弱く、"
+                "将来性は慎重な評価が必要です。"
+            )
+        elif technical == "売られ過ぎ寄り" and valuation == "割安寄り":
+            contrast = "テクニカルと相対バリュエーションの両面で割安寄りです。"
+        return (
+            f"{contrast}"
+            f"テクニカル: {technical}。"
+            f"バリュエーション: {valuation}。"
+            f"収益性: {profitability}。財務健全性: {finances}。"
+            f"成長性: {growth}。配当: {dividend}。"
+            "これは候補選定の参考情報であり、将来の業績や株価を保証するものではありません。"
+        )
+
+    @classmethod
+    def _technical_assessment(cls, values: Mapping[str, object]) -> str:
+        rsi = cls._number(values, "daily.rsi_14")
+        close = cls._number(values, "daily.close")
+        sma25 = cls._number(values, "daily.sma_25")
+        sma75 = cls._number(values, "daily.sma_75")
+        if rsi is not None and rsi <= 35:
+            return "売られ過ぎ寄り"
+        if rsi is not None and rsi >= 70:
+            return "過熱気味"
+        if close is not None and sma25 is not None and sma75 is not None:
+            return "上昇基調" if close > sma25 and close > sma75 else "弱含み"
+        return "判断材料不足"
+
+    @classmethod
+    def _valuation_assessment(cls, values: Mapping[str, object]) -> str:
+        comparisons = []
+        for metric in ("per", "pbr"):
+            value = cls._number(values, f"fundamental.{metric}")
+            average = cls._number(values, f"industry.{metric}")
+            if value is not None and average not in (None, 0):
+                comparisons.append(value / average)
+        if not comparisons:
+            return "判断材料不足"
+        average_ratio = sum(comparisons) / len(comparisons)
+        return "割安寄り" if average_ratio < 0.85 else "割高寄り" if average_ratio > 1.15 else "業界並み"
+
+    @classmethod
+    def _profitability_assessment(cls, values: Mapping[str, object]) -> str:
+        roe = cls._number(values, "fundamental.roe")
+        margin = cls._number(values, "fundamental.operating_margin")
+        industry_roe = cls._number(values, "industry.roe")
+        positives = int(roe is not None and roe >= 10)
+        positives += int(
+            roe is not None and industry_roe is not None and roe >= industry_roe
+        )
+        positives += int(margin is not None and margin > 0)
+        return "良好" if positives >= 2 else "注意" if roe is not None or margin is not None else "判断材料不足"
+
+    @classmethod
+    def _financial_assessment(cls, values: Mapping[str, object]) -> str:
+        equity = cls._number(values, "fundamental.equity_ratio")
+        cash_flow = cls._number(values, "fundamental.operating_cash_flow")
+        if equity is None and cash_flow is None:
+            return "判断材料不足"
+        if (equity is None or equity >= 40) and (cash_flow is None or cash_flow > 0):
+            return "良好"
+        return "注意"
+
+    @classmethod
+    def _growth_assessment(cls, values: Mapping[str, object]) -> str:
+        growth = [
+            cls._number(values, f"fundamental.{metric}")
+            for metric in (
+                "sales_growth", "operating_profit_growth",
+                "profit_growth", "eps_growth",
+            )
+        ]
+        growth = [value for value in growth if value is not None]
+        if not growth:
+            return "判断材料不足"
+        positive_count = sum(value > 0 for value in growth)
+        return "良好" if positive_count >= (len(growth) + 1) // 2 else "成長性に注意"
+
+    @classmethod
+    def _dividend_assessment(cls, values: Mapping[str, object]) -> str:
+        value = cls._number(values, "fundamental.dividend_yield")
+        average = cls._number(values, "industry.dividend_yield")
+        if value is None:
+            return "判断材料不足"
+        if average not in (None, 0):
+            return "業界平均より高い" if value > average * 1.15 else "業界平均より低い" if value < average * 0.85 else "業界並み"
+        return "高配当寄り" if value >= 3.5 else "比較材料不足"

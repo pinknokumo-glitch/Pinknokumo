@@ -226,12 +226,22 @@ class RuleAndMetricTestCase(unittest.TestCase):
             "fundamental.disclosed_date": "2026-06-30", "fundamental.per": 12,
             "fundamental.pbr": 0.9, "fundamental.roe": 11, "fundamental.equity_ratio": 55,
             "fundamental.operating_cash_flow": 100, "expectation_score": 65,
+            "fundamental.sector_name": "輸送用機器",
+            "fundamental.sales_growth": -5,
+            "fundamental.operating_profit_growth": -10,
+            "industry.sample_count": 20,
+            "industry.per": 18,
+            "industry.pbr": 1.4,
+            "industry.roe": 9,
+            "industry.equity_ratio": 45,
         }, "過去シグナルは十分です。")
         self.assertIn("【テクニカル】", comment)
         self.assertIn("日足42.5", comment)
         self.assertIn("【ファンダメンタル】", comment)
         self.assertIn("開示日2026-06-30", comment)
-        self.assertIn("PER12.0倍", comment)
+        self.assertIn("PER 12.0倍（業界平均18.0倍）", comment)
+        self.assertIn("業界比で割安", comment)
+        self.assertIn("成長性が弱く、将来性は慎重な評価", comment)
         self.assertIn("【バックテスト】", comment)
         self.assertIn("【総合所見】", comment)
         missing = AnalysisCommentary.integrated_comment({}, None)
@@ -353,7 +363,8 @@ class RuleAndMetricTestCase(unittest.TestCase):
         self.assertTrue(RuleEngine().evaluate(rule, {"rsi": 25.0, "close": 120.0}).matched)
 
     def test_financial_ratios(self) -> None:
-        values = FundamentalAnalyzer().latest_values({
+        analyzer = FundamentalAnalyzer()
+        values = analyzer.latest_values({
             "earnings_per_share": 100, "book_value_per_share": 1000, "profit": 100,
             "equity": 800, "total_assets": 2000, "operating_profit": 150,
             "net_sales": 1000, "equity_ratio": 0.4,
@@ -362,6 +373,24 @@ class RuleAndMetricTestCase(unittest.TestCase):
         self.assertEqual(values["roe"], 12.5)
         self.assertEqual(values["equity_ratio"], 40)
         self.assertEqual(values["dividend_yield"], 5)
+        growth = analyzer.growth_values(
+            {
+                "net_sales": 1200,
+                "operating_profit": 180,
+                "profit": 120,
+                "earnings_per_share": 110,
+            },
+            {
+                "net_sales": 1000,
+                "operating_profit": 150,
+                "profit": 100,
+                "earnings_per_share": 100,
+            },
+        )
+        self.assertAlmostEqual(growth["sales_growth"], 20.0)
+        self.assertAlmostEqual(growth["operating_profit_growth"], 20.0)
+        self.assertAlmostEqual(growth["profit_growth"], 20.0)
+        self.assertAlmostEqual(growth["eps_growth"], 10.0)
 
     def test_optimizer_does_not_mutate_input(self) -> None:
         snapshots = [{"daily.rsi_14": value} for value in [10, 20, 30, 40, 50]]
