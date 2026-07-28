@@ -24,6 +24,20 @@ from modules.screener import Screener
 from modules.screening_options import ScreeningOptions
 from modules.screening_relaxation import staged_rules
 
+INDUSTRY_METRICS = (
+    "per",
+    "pbr",
+    "roe",
+    "roa",
+    "operating_margin",
+    "equity_ratio",
+    "dividend_yield",
+    "sales_growth",
+    "operating_profit_growth",
+    "profit_growth",
+    "eps_growth",
+)
+
 
 def preference_signature(preference: ScreeningPreference) -> str:
     payload = {
@@ -69,6 +83,46 @@ def verified_expectation_score(
     return float(score) if score is not None else None
 
 
+def add_industry_benchmarks(
+    snapshots: Sequence[Mapping[str, object]],
+    sector_names: Mapping[str, object],
+) -> list[dict[str, object]]:
+    grouped: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    prepared: list[dict[str, object]] = []
+    for source in snapshots:
+        item = dict(source)
+        sector = str(sector_names.get(str(item["code"])) or "業種未分類")
+        item["fundamental.sector_name"] = sector
+        prepared.append(item)
+        for metric in INDUSTRY_METRICS:
+            value = _finite_float(item.get(f"fundamental.{metric}"))
+            if value is not None and _reasonable_industry_value(metric, value):
+                grouped[sector][metric].append(value)
+    for item in prepared:
+        sector = str(item["fundamental.sector_name"])
+        peer_counts = []
+        for metric in INDUSTRY_METRICS:
+            values = grouped[sector].get(metric, [])
+            if len(values) >= 2:
+                item[f"industry.{metric}"] = sum(values) / len(values)
+                peer_counts.append(len(values))
+        item["industry.sample_count"] = max(peer_counts, default=0)
+    return prepared
+
+
+def _reasonable_industry_value(metric: str, value: float) -> bool:
+    limits = {
+        "per": (0.0, 300.0),
+        "pbr": (0.0, 30.0),
+        "dividend_yield": (0.0, 20.0),
+        "equity_ratio": (0.0, 100.0),
+    }
+    low, high = limits.get(metric, (-200.0, 500.0))
+    return low < value <= high
+
+
 def run_cloud_batch(
     database: Database,
     preferences: Sequence[ScreeningPreference],
@@ -96,12 +150,16 @@ def run_cloud_batch(
             candidate_codes=candidate_codes,
         )
         snapshots = snapshot_reader.snapshots()
+        master_rows = connection.execute(
+            "SELECT code, company_name, sector_33_name FROM master_stock"
+        ).fetchall()
         company_names = {
-            str(row["code"]): row["company_name"]
-            for row in connection.execute(
-                "SELECT code, company_name FROM master_stock"
-            )
+            str(row["code"]): row["company_name"] for row in master_rows
         }
+        sector_names = {
+            str(row["code"]): row["sector_33_name"] for row in master_rows
+        }
+    snapshots = add_industry_benchmarks(snapshots, sector_names)
     rule_engine = RuleEngine()
     queued_groups = list(groups.items())
     overflow_groups = queued_groups[max_groups:]
