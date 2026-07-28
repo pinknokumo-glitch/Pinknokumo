@@ -245,12 +245,12 @@ class RuleAndMetricTestCase(unittest.TestCase):
         self.assertIn("【テクニカル】", comment)
         self.assertIn("日足42.5", comment)
         self.assertIn("前回比+3.5（上昇）", comment)
-        self.assertIn("25日線1,250.0（乖離-4.0%、下側）", comment)
-        self.assertIn("日足MACD: -2.00、シグナル-1.00", comment)
+        self.assertIn("短期（日足）は下落基調［25日線比-4.0%］", comment)
+        self.assertIn("日足下向き（MACD -2.00、ヒストグラム-1.00", comment)
         self.assertIn("ストキャスティクス", comment)
-        self.assertIn("ボリンジャー%B 12.0（下限バンド付近）", comment)
+        self.assertIn("ボリンジャー下限バンド付近（%B 12.0）", comment)
         self.assertIn("ADX 27.0（トレンドが強い", comment)
-        self.assertIn("出来高は20日平均比165%（商いが活発）", comment)
+        self.assertIn("出来高20日平均比165%（商いが活発）", comment)
         self.assertIn("【ファンダメンタル】", comment)
         self.assertIn("開示日2026-06-30", comment)
         self.assertIn("PER 12.0倍（業界平均18.0倍）", comment)
@@ -261,6 +261,53 @@ class RuleAndMetricTestCase(unittest.TestCase):
         missing = AnalysisCommentary.integrated_comment({}, None)
         self.assertIn("ファンダメンタル評価は未実施", missing)
         self.assertIn("バックテスト結果は未算出", missing)
+
+    def test_technical_comment_summarizes_long_and_short_timeframes(self) -> None:
+        comment = AnalysisCommentary._technical_comment({
+            "monthly.rsi_14": 25,
+            "weekly.rsi_14": 45,
+            "weekly.rsi_14_previous": 48,
+            "daily.rsi_14": 50,
+            "daily.rsi_14_previous": 53,
+            "monthly.close": 800,
+            "monthly.sma_25": 1000,
+            "weekly.close": 900,
+            "weekly.sma_25": 950,
+            "daily.close": 1050,
+            "daily.sma_5": 1000,
+            "daily.sma_25": 1020,
+        })
+        self.assertIn("月足25.0（売られ過ぎ圏", comment)
+        self.assertIn(
+            "週足・日足は中立圏で低下中のため、短中期にはさらに下げる可能性",
+            comment,
+        )
+        self.assertIn("短期（日足）は上昇基調", comment)
+        self.assertIn("長期（月足）は下落基調", comment)
+        self.assertIn(
+            "長期的には下落トレンドですが、短期的には反発・上昇",
+            comment,
+        )
+
+    def test_average_return_comment_explains_entry_exit_and_simple_mean(self) -> None:
+        comment = AnalysisCommentary().backtest_comment(
+            {
+                "trade_count": 20,
+                "average_return_percent": 4.2,
+                "win_rate_percent": 60,
+                "max_drawdown_percent": -12,
+            },
+            {"score": 70, "grade": "B"},
+            holding_days=60,
+            position_side="long",
+            evaluation_mode="condition_exit",
+        )
+        self.assertIn("翌営業日始値で買い", comment)
+        self.assertIn("期待値条件が成立した翌営業日始値で決済", comment)
+        self.assertIn("利益・損失を含めて単純平均", comment)
+        self.assertIn("連続日に成立した場合も、各日を独立", comment)
+        self.assertIn("複利・年率換算ではなく", comment)
+        self.assertIn("手数料・税金・スリッページは含みません", comment)
 
     def test_notification_format_and_disabled_state(self) -> None:
         message = format_screening_message(
