@@ -143,6 +143,10 @@ class MainActivity : ComponentActivity() {
                         StockAiApp(
                             session = session,
                             initialPage = launchPage,
+                            onSessionUpdated = {
+                                sessionStore.save(it)
+                                activeSession = it
+                            },
                             onLogout = {
                                 sessionStore.clear()
                                 activeSession = null
@@ -429,6 +433,7 @@ private fun StartupLoginScreen(
 private fun StockAiApp(
     session: SupabaseSession,
     initialPage: String = "home",
+    onSessionUpdated: (SupabaseSession) -> Unit,
     onLogout: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -494,6 +499,7 @@ private fun StockAiApp(
             "results" -> DeliveryResultsScreen(
                 session,
                 favoriteCodes = favorites.map { it.code }.toSet(),
+                onSessionUpdated = onSessionUpdated,
                 onBack = { page = "home" },
                 onSelect = { selectedResult = it },
                 onToggleFavorite = {
@@ -1049,24 +1055,33 @@ private fun ConditionFieldsPanel(
 private fun DeliveryResultsScreen(
     session: SupabaseSession,
     favoriteCodes: Set<String>,
+    onSessionUpdated: (SupabaseSession) -> Unit,
     onBack: () -> Unit,
     onSelect: (CloudScreeningResult) -> Unit,
     onToggleFavorite: (CloudScreeningResult) -> Unit,
 ) {
     val cloud = remember { SupabaseClient() }
+    var requestSession by remember(session.userId) { mutableStateOf(session) }
     var results by remember { mutableStateOf<List<CloudScreeningResult>>(emptyList()) }
     var run by remember { mutableStateOf<CloudScreeningRun?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableIntStateOf(0) }
     LaunchedEffect(refreshToken) {
         error = null
+        val currentSession = requestSession
         runCatching {
             withContext(Dispatchers.IO) {
-                cloud.loadLatestRun(session) to cloud.loadLatestResults(session)
+                cloud.withFreshSession(currentSession) { validSession ->
+                    cloud.loadLatestRun(validSession) to cloud.loadLatestResults(validSession)
+                }
             }
-        }.onSuccess {
-            run = it.first
-            results = it.second
+        }.onSuccess { authenticated ->
+            if (authenticated.session.accessToken != requestSession.accessToken) {
+                requestSession = authenticated.session
+                onSessionUpdated(authenticated.session)
+            }
+            run = authenticated.value.first
+            results = authenticated.value.second
         }.onFailure { error = it.message }
     }
     Scaffold(

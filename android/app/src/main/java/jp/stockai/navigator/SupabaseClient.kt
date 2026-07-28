@@ -19,6 +19,12 @@ data class SupabaseSession(
         expiresAtEpochSeconds <= nowEpochSeconds + 60
 }
 data class SupabaseRegistration(val session: SupabaseSession?, val confirmationRequired: Boolean)
+data class SupabaseAuthenticatedValue<T>(val session: SupabaseSession, val value: T)
+
+private class SupabaseRequestException(
+    val statusCode: Int,
+    message: String,
+) : IllegalStateException(message)
 
 data class CloudScreeningResult(
     val screeningDate: String,
@@ -151,6 +157,20 @@ class SupabaseClient(
             JSONObject().put("refresh_token", session.refreshToken),
         )
         return sessionFromResponse(response, session.email)
+    }
+
+    fun <T> withFreshSession(
+        session: SupabaseSession,
+        action: (SupabaseSession) -> T,
+    ): SupabaseAuthenticatedValue<T> {
+        var current = if (session.needsRefresh()) refreshSession(session) else session
+        return try {
+            SupabaseAuthenticatedValue(current, action(current))
+        } catch (error: SupabaseRequestException) {
+            if (!error.isExpiredJwt()) throw error
+            current = refreshSession(current)
+            SupabaseAuthenticatedValue(current, action(current))
+        }
     }
 
     fun loadPreference(session: SupabaseSession): CloudPreference? {
@@ -478,7 +498,7 @@ class SupabaseClient(
                         .map { error.optString(it) }
                         .firstOrNull { it.isNotBlank() }
                 }.getOrNull().orEmpty().ifBlank { "HTTP $code" }
-                error("Supabase: $message")
+                throw SupabaseRequestException(code, "Supabase: $message")
             }
             body.ifBlank { if (method == "GET" || path.startsWith("/rest/")) "[]" else "{}" }
         } finally {
@@ -503,4 +523,10 @@ class SupabaseClient(
     private companion object {
         const val AUTH_REDIRECT_URL = "stockai://auth/confirm"
     }
+}
+
+private fun SupabaseRequestException.isExpiredJwt(): Boolean {
+    if (statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) return false
+    val normalized = message.orEmpty().lowercase()
+    return "jwt" in normalized || "token" in normalized || "expired" in normalized
 }
