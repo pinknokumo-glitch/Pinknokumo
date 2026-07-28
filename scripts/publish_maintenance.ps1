@@ -125,7 +125,22 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Could not create the maintenance branch." }
     foreach ($commit in $preparedCommits) {
         & $git cherry-pick $commit
-        if ($LASTEXITCODE -ne 0) { throw "Could not apply prepared commit: $commit" }
+        if ($LASTEXITCODE -ne 0) {
+            & $git rev-parse -q --verify CHERRY_PICK_HEAD *> $null
+            $cherryPickActive = $LASTEXITCODE -eq 0
+            & $git diff --cached --quiet
+            $emptyCherryPick = $LASTEXITCODE -eq 0
+            if ($cherryPickActive -and $emptyCherryPick) {
+                & $git cherry-pick --skip
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Could not skip an empty prepared commit: $commit"
+                }
+                Write-Output "Skipped already-published commit: $commit"
+            }
+            else {
+                throw "Could not apply prepared commit: $commit"
+            }
+        }
     }
 }
 finally {
@@ -136,27 +151,43 @@ finally {
         Remove-Item -LiteralPath $backupDir -Force
     }
 }
-& $git push --force-with-lease -u origin $Branch
-if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
+$aheadCount = [int]((& $git rev-list --count origin/main..HEAD).Trim())
+if ($LASTEXITCODE -ne 0) { throw "Could not compare the maintenance branch with main." }
+if ($aheadCount -gt 0) {
+    & $git push --force-with-lease -u origin $Branch
+    if ($LASTEXITCODE -ne 0) { throw "Could not push the maintenance branch." }
 
-$prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
-    --title "Simplify Android result cards and add watchlist" `
-    --body "Shows score, average return, win rate, and maximum drawdown in compact result cards; adds tap-through technical/fundamental details and a per-user on-device monitoring list.").Trim()
-if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
-Write-Output "Created pull request: $prUrl"
+    $prUrl = (& $gh pr create --repo $Repository --base main --head $Branch `
+        --title "Harden the maintenance publisher" `
+        --body "Makes repeated publication idempotent, skips commits already present on main, and avoids duplicate daily workflow runs.").Trim()
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the pull request." }
+    Write-Output "Created pull request: $prUrl"
 
-& $gh pr merge $prUrl --repo $Repository --squash --delete-branch
-if ($LASTEXITCODE -ne 0) { throw "Could not merge the pull request." }
-Write-Output "Merged maintenance update into main."
+    & $gh pr merge $prUrl --repo $Repository --squash --delete-branch
+    if ($LASTEXITCODE -ne 0) { throw "Could not merge the pull request." }
+    Write-Output "Merged maintenance update into main."
+}
+else {
+    Write-Output "No unpublished maintenance changes were found."
+}
 
 if ($RunWorkflow) {
-    & $gh workflow run daily.yml --repo $Repository --ref main
-    if ($LASTEXITCODE -ne 0) { throw "Could not start the cloud workflow." }
-    Start-Sleep -Seconds 3
-    $runId = (& $gh run list --repo $Repository --workflow daily.yml --limit 1 --json databaseId --jq '.[0].databaseId').Trim()
-    Write-Output "Started daily workflow run: $runId"
-    Write-Output "Monitor with: gh run watch $runId --repo $Repository"
-    Write-Output "The morning candidate backtest and app-result workflow was started."
+    $latestRunJson = (& $gh run list --repo $Repository --workflow daily.yml `
+        --branch main --limit 1 --json databaseId,status,url) -join ""
+    if ($LASTEXITCODE -ne 0) { throw "Could not inspect the latest daily.yml run." }
+    $latestRun = @($latestRunJson | ConvertFrom-Json) | Select-Object -First 1
+    if ($latestRun -and $latestRun.status -in @("queued", "in_progress", "waiting", "requested")) {
+        Write-Output "Daily workflow is already active: $($latestRun.url)"
+    }
+    else {
+        & $gh workflow run daily.yml --repo $Repository --ref main
+        if ($LASTEXITCODE -ne 0) { throw "Could not start the cloud workflow." }
+        Start-Sleep -Seconds 3
+        $runId = (& $gh run list --repo $Repository --workflow daily.yml --limit 1 --json databaseId --jq '.[0].databaseId').Trim()
+        Write-Output "Started daily workflow run: $runId"
+        Write-Output "Monitor with: gh run watch $runId --repo $Repository"
+        Write-Output "The morning candidate backtest and app-result workflow was started."
+    }
 }
 else {
     Write-Output "Workflow was not started."
