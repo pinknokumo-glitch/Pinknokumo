@@ -8,6 +8,7 @@ from modules.cloud_batch import (
     add_industry_benchmarks,
     group_preferences,
     preference_signature,
+    should_stop_relaxation,
     verified_expectation_score,
 )
 from modules.cloud_preferences import ScreeningPreference
@@ -163,6 +164,11 @@ class CloudBatchTests(unittest.TestCase):
             "expectation": {"score": 64.5},
         }
         self.assertEqual(verified_expectation_score(result), 64.5)
+
+    def test_relaxation_continues_when_first_stage_has_only_one_hit(self) -> None:
+        self.assertFalse(should_stop_relaxation(1, 5, 0, 3))
+        self.assertTrue(should_stop_relaxation(5, 5, 1, 3))
+        self.assertTrue(should_stop_relaxation(2, 5, 2, 3))
 
     def test_industry_benchmarks_are_added_per_sector(self) -> None:
         enriched = add_industry_benchmarks(

@@ -41,6 +41,8 @@ cloud_screening:
   # Free-tier guardrails. Identical user settings are still calculated only once.
   max_groups: 50
   max_hits_per_group: 100
+  # Continue configured auto-relaxation when the first stage yields only a few stocks.
+  minimum_hits_before_relaxation: 5
   # Backfill only matched stocks when long horizons need more history.
   backtest_history_period: "10y"
   backtest_history_chunk_size: 5

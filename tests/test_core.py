@@ -221,8 +221,15 @@ class RuleAndMetricTestCase(unittest.TestCase):
     def test_integrated_comment_includes_fundamentals_and_missing_data_state(self) -> None:
         comment = AnalysisCommentary.integrated_comment({
             "daily.rsi_14": 42.5, "weekly.rsi_14": 47.0, "monthly.rsi_14": 49.0,
+            "daily.rsi_14_previous": 39.0,
             "daily.close": 1200, "daily.sma_25": 1250, "daily.sma_75": 1100,
+            "daily.price_vs_sma_25_percent": -4.0,
             "daily.macd": -2, "daily.macd_signal": -1,
+            "daily.macd_histogram": -1, "daily.macd_histogram_previous": -1.5,
+            "daily.stoch_k": 18, "daily.stoch_d": 22,
+            "daily.bb_percent_b": 12, "daily.adx_14": 27,
+            "daily.atr_14_percent": 4.2, "daily.volume_ratio_20": 165,
+            "daily.return_5_percent": 2.5, "daily.return_20_percent": -3,
             "fundamental.disclosed_date": "2026-06-30", "fundamental.per": 12,
             "fundamental.pbr": 0.9, "fundamental.roe": 11, "fundamental.equity_ratio": 55,
             "fundamental.operating_cash_flow": 100, "expectation_score": 65,
@@ -237,6 +244,13 @@ class RuleAndMetricTestCase(unittest.TestCase):
         }, "過去シグナルは十分です。")
         self.assertIn("【テクニカル】", comment)
         self.assertIn("日足42.5", comment)
+        self.assertIn("前回比+3.5（上昇）", comment)
+        self.assertIn("25日線1,250.0（乖離-4.0%、下側）", comment)
+        self.assertIn("日足MACD: -2.00、シグナル-1.00", comment)
+        self.assertIn("ストキャスティクス", comment)
+        self.assertIn("ボリンジャー%B 12.0（下限バンド付近）", comment)
+        self.assertIn("ADX 27.0（トレンドが強い", comment)
+        self.assertIn("出来高は20日平均比165%（商いが活発）", comment)
         self.assertIn("【ファンダメンタル】", comment)
         self.assertIn("開示日2026-06-30", comment)
         self.assertIn("PER 12.0倍（業界平均18.0倍）", comment)

@@ -83,6 +83,16 @@ def verified_expectation_score(
     return float(score) if score is not None else None
 
 
+def should_stop_relaxation(
+    hit_count: int,
+    minimum_hits: int,
+    stage_index: int,
+    stage_count: int,
+) -> bool:
+    """Stop after reaching the target, or always accept the final bounded stage."""
+    return hit_count >= minimum_hits or stage_index >= stage_count - 1
+
+
 def add_industry_benchmarks(
     snapshots: Sequence[Mapping[str, object]],
     sector_names: Mapping[str, object],
@@ -289,9 +299,18 @@ def _compute_group(
     effective_profile = f"cloud_{signature}"
     relaxation_label = "基準条件"
     relaxation_counts: list[dict[str, object]] = []
-    for stage_index, (_, stage_label, stage_rule) in enumerate(
-        staged_rules(base_profile, base_rule, resolved.get("auto_relaxation"))
-    ):
+    relaxation_stages = staged_rules(
+        base_profile, base_rule, resolved.get("auto_relaxation")
+    )
+    minimum_hits = max(
+        1,
+        int(
+            ((settings or {}).get("cloud_screening") or {}).get(
+                "minimum_hits_before_relaxation", 5
+            )
+        ),
+    )
+    for stage_index, (_, stage_label, stage_rule) in enumerate(relaxation_stages):
         stage_profile = f"cloud_{signature}_{stage_index}"
         hits = []
         for snapshot in snapshots:
@@ -312,7 +331,9 @@ def _compute_group(
         effective_profile = stage_profile
         effective_rule = stage_rule
         relaxation_label = stage_label
-        if hits:
+        if should_stop_relaxation(
+            len(hits), minimum_hits, stage_index, len(relaxation_stages)
+        ):
             break
     hits = hits[:max_hits_per_group]
 
