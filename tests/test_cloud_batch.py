@@ -5,6 +5,7 @@ import unittest
 from modules.cloud_batch import (
     _codes_requiring_backtest,
     _estimated_price_fields,
+    add_industry_benchmarks,
     group_preferences,
     preference_signature,
     verified_expectation_score,
@@ -162,6 +163,34 @@ class CloudBatchTests(unittest.TestCase):
             "expectation": {"score": 64.5},
         }
         self.assertEqual(verified_expectation_score(result), 64.5)
+
+    def test_industry_benchmarks_are_added_per_sector(self) -> None:
+        enriched = add_industry_benchmarks(
+            [
+                {
+                    "code": "11110",
+                    "fundamental.per": 10.0,
+                    "fundamental.roe": 12.0,
+                },
+                {
+                    "code": "22220",
+                    "fundamental.per": 20.0,
+                    "fundamental.roe": 8.0,
+                },
+                {
+                    "code": "33330",
+                    "fundamental.per": 30.0,
+                    "fundamental.roe": 4.0,
+                },
+            ],
+            {"11110": "機械", "22220": "機械", "33330": "小売"},
+        )
+        first = enriched[0]
+        self.assertEqual(first["fundamental.sector_name"], "機械")
+        self.assertEqual(first["industry.per"], 15.0)
+        self.assertEqual(first["industry.roe"], 10.0)
+        self.assertEqual(first["industry.sample_count"], 2)
+        self.assertNotIn("industry.per", enriched[2])
 
 
 if __name__ == "__main__":

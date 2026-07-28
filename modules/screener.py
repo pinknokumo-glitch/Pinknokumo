@@ -78,9 +78,10 @@ class Screener:
             values.update({f"{timeframe}.{name}": value for name, value in self.analyzer.latest_values(computed).items()})
             if timeframe == "daily":
                 daily_frame = frame
-        financial = self.conn.execute(
-            "SELECT * FROM financial WHERE code=? ORDER BY disclosed_date DESC LIMIT 1", [code]
-        ).fetchone()
+        financial_rows = self.conn.execute(
+            "SELECT * FROM financial WHERE code=? ORDER BY disclosed_date DESC LIMIT 2", [code]
+        ).fetchall()
+        financial = financial_rows[0] if financial_rows else None
         if financial and values.get("daily.close") is not None:
             values["fundamental.disclosed_date"] = financial["disclosed_date"]
             trailing_dividends = None
@@ -88,6 +89,15 @@ class Screener:
                 cutoff = daily_frame["trade_date"].max() - pd.DateOffset(days=365)
                 trailing_dividends = daily_frame.loc[daily_frame["trade_date"] > cutoff, "dividends"].fillna(0).sum()
             values.update({f"fundamental.{name}": value for name, value in self.fundamentals.latest_values(dict(financial), values["daily.close"], trailing_dividends).items()})
+            if len(financial_rows) >= 2:
+                growth = self.fundamentals.growth_values(
+                    dict(financial_rows[0]),
+                    dict(financial_rows[1]),
+                )
+                values.update({
+                    f"fundamental.{name}": value
+                    for name, value in growth.items()
+                })
         return values
 
     def _latest_expectation_score(self, code: str, profile_name: str) -> float | None:
