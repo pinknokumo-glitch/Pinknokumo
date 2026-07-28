@@ -8,7 +8,16 @@ from collections.abc import Mapping
 
 
 class AnalysisCommentary:
-    def backtest_comment(self, summary: Mapping[str, object], expectation: Mapping[str, object]) -> str:
+    def backtest_comment(
+        self,
+        summary: Mapping[str, object],
+        expectation: Mapping[str, object],
+        *,
+        holding_days: int | None = None,
+        position_side: str = "long",
+        evaluation_mode: str = "condition_exit",
+        target_return_percent: float = 5.0,
+    ) -> str:
         count = int(summary["trade_count"])
         if count == 0:
             return "条件に一致した過去シグナルがないため、統計的な評価はできません。条件を緩めるか、対象期間を長くしてください。"
@@ -19,10 +28,53 @@ class AnalysisCommentary:
         direction = "プラス" if average > 0 else "マイナス"
         reliability = "サンプル数が限られる" if count < 30 else "一定数のサンプルがある"
         risk = "下振れ幅も比較的抑えられています" if drawdown >= -15 else "大きな含み損が発生した局面があります"
+        calculation = self._average_return_method(
+            holding_days, position_side, evaluation_mode, target_return_percent
+        )
         return (
             f"過去シグナルは{count}件で、指定保有期間の平均リターンは{average:.1f}%（{direction}）、"
             f"勝率は{win_rate:.1f}%でした。最大含み損は{drawdown:.1f}%で、{risk}。"
             f"期待値スコアは{score:.1f}/100（{grade}）です。{reliability}ため、将来の結果を保証するものではありません。"
+            f"\n算出方法: {calculation}"
+        )
+
+    @staticmethod
+    def _average_return_method(
+        holding_days: int | None,
+        position_side: str,
+        evaluation_mode: str,
+        target_return_percent: float,
+    ) -> str:
+        entry = "ソート条件に一致した日の翌営業日始値で買い" if position_side != "short" else (
+            "ソート条件に一致した日の翌営業日始値で売り"
+        )
+        period = f"{holding_days}営業日" if holding_days else "設定保有期間"
+        exits = {
+            "condition_exit": (
+                "期待値条件が成立した翌営業日始値で決済し、成立しなければ"
+                f"{period}終了時の終値で決済"
+            ),
+            "period_end": f"{period}終了時の終値で決済",
+            "within_period_up": (
+                f"{period}内で最初に有利な終値となった日に決済し、"
+                "到達しなければ期間終了時に決済"
+            ),
+            "target_return": (
+                f"{period}内に目標{target_return_percent:.1f}%へ到達した価格で決済し、"
+                "未到達なら期間終了時に決済"
+            ),
+        }
+        exit_method = exits.get(evaluation_mode, f"{period}終了時に決済")
+        formula = (
+            "（売値－買値）÷買値×100"
+            if position_side != "short"
+            else "（売建価格－買戻価格）÷売建価格×100"
+        )
+        return (
+            f"{entry}、{exit_method}した各取引のリターン率"
+            f"［{formula}］を、利益・損失を含めて単純平均しています。"
+            "条件が連続日に成立した場合も、各日を独立した過去シグナルとして数えます。"
+            "複利・年率換算ではなく、手数料・税金・スリッページは含みません。"
         )
 
     @staticmethod
@@ -51,47 +103,61 @@ class AnalysisCommentary:
     def _technical_comment(cls, values: Mapping[str, object]) -> str:
         lines: list[str] = []
         timeframes = (
-            ("daily", "日足", "日"),
-            ("weekly", "週足", "週"),
             ("monthly", "月足", "か月"),
+            ("weekly", "週足", "週"),
+            ("daily", "日足", "日"),
         )
 
         rsi_items = []
+        rsi_states: dict[str, str] = {}
+        rsi_falling: dict[str, bool] = {}
         for prefix, label, _ in timeframes:
             value = cls._number(values, f"{prefix}.rsi_14")
             if value is None:
                 continue
             previous = cls._number(values, f"{prefix}.rsi_14_previous")
             change = cls._change_label(value, previous)
+            state = cls._rsi_label(value)
+            rsi_states[prefix] = state
+            rsi_falling[prefix] = previous is not None and value < previous - 0.1
             rsi_items.append(
-                f"{label}{value:.1f}（{cls._rsi_label(value)}"
+                f"{label}{value:.1f}（{state}"
                 + (f"、前回比{change}" if change else "")
                 + "）"
             )
         if rsi_items:
-            lines.append("・RSI: " + " / ".join(rsi_items))
+            lines.append(
+                "・RSI: " + " / ".join(rsi_items) + "。"
+                + cls._rsi_outlook(rsi_states, rsi_falling)
+            )
 
-        for prefix, label, unit in timeframes:
-            close = cls._number(values, f"{prefix}.close")
-            averages = []
-            for period in (5, 25, 75, 200):
-                average = cls._number(values, f"{prefix}.sma_{period}")
-                if close is None or average is None:
-                    continue
-                distance = cls._number(
-                    values, f"{prefix}.price_vs_sma_{period}_percent"
-                )
-                if distance is None and average:
-                    distance = (close / average - 1) * 100
-                averages.append(
-                    f"{period}{unit}線{average:,.1f}"
-                    f"（乖離{distance:+.1f}%、{'上側' if close >= average else '下側'}）"
-                )
-            if averages:
-                lines.append(
-                    f"・{label}トレンド: 終値{close:,.1f} / " + " / ".join(averages)
-                )
+        trend_items = []
+        trend_states: dict[str, str] = {}
+        trend_specs = (
+            ("daily", "短期", "日足", (5, 25)),
+            ("weekly", "中期", "週足", (25,)),
+            ("monthly", "長期", "月足", (25,)),
+        )
+        for prefix, horizon, label, periods in trend_specs:
+            state, distances = cls._moving_average_state(values, prefix, periods)
+            if state is None:
+                continue
+            trend_states[horizon] = state
+            detail = "、".join(
+                f"{period}{'日' if prefix == 'daily' else '週' if prefix == 'weekly' else 'か月'}線比{distance:+.1f}%"
+                for period, distance in distances
+            )
+            trend_items.append(
+                f"{horizon}（{label}）は{state}" + (f"［{detail}］" if detail else "")
+            )
+        if trend_items:
+            lines.append(
+                "・移動平均線: " + " / ".join(trend_items) + "。"
+                + cls._trend_outlook(trend_states)
+            )
 
+        macd_items = []
+        macd_states = []
         for prefix, label, _ in timeframes:
             macd = cls._number(values, f"{prefix}.macd")
             signal = cls._number(values, f"{prefix}.macd_signal")
@@ -102,53 +168,61 @@ class AnalysisCommentary:
                 values, f"{prefix}.macd_histogram_previous"
             )
             momentum = "上向き" if macd >= signal else "下向き"
+            macd_states.append(momentum)
             histogram_change = cls._change_label(histogram, previous_histogram)
             histogram_text = f"{histogram:.2f}" if histogram is not None else "-"
-            lines.append(
-                f"・{label}MACD: {macd:.2f}、シグナル{signal:.2f}"
-                f"（{momentum}、ヒストグラム"
-                f"{histogram_text}"
+            macd_items.append(
+                f"{label}{momentum}（MACD {macd:.2f}、ヒストグラム{histogram_text}"
                 + (f"・前回比{histogram_change}" if histogram_change else "")
                 + "）"
             )
+        if macd_items:
+            overall = (
+                "全時間軸で上向き"
+                if macd_states and all(state == "上向き" for state in macd_states)
+                else "全時間軸で下向き"
+                if macd_states and all(state == "下向き" for state in macd_states)
+                else "時間軸で方向が分かれています"
+            )
+            lines.append("・MACD: " + " / ".join(macd_items) + f"。{overall}。")
 
+        heat_items = []
         for prefix, label, _ in timeframes:
             k = cls._number(values, f"{prefix}.stoch_k")
             d = cls._number(values, f"{prefix}.stoch_d")
-            if k is None or d is None:
-                continue
-            zone = (
-                "売られ過ぎ圏"
-                if max(k, d) <= 20
-                else "買われ過ぎ圏"
-                if min(k, d) >= 80
-                else "中立圏"
-            )
-            cross = "%Kが%Dを上回る" if k >= d else "%Kが%Dを下回る"
-            lines.append(
-                f"・{label}ストキャスティクス: %K {k:.1f} / %D {d:.1f}"
-                f"（{zone}、{cross}）"
-            )
-
-        for prefix, label, _ in timeframes:
             percent_b = cls._number(values, f"{prefix}.bb_percent_b")
+            components = []
+            if k is not None and d is not None:
+                zone = (
+                    "売られ過ぎ"
+                    if max(k, d) <= 20
+                    else "買われ過ぎ"
+                    if min(k, d) >= 80
+                    else "中立"
+                )
+                components.append(
+                    f"ストキャスティクス{zone}（%K {k:.1f}/%D {d:.1f}）"
+                )
+            if percent_b is not None:
+                components.append(
+                    f"ボリンジャー{cls._bollinger_label(percent_b)}（%B {percent_b:.1f}）"
+                )
+            if components:
+                heat_items.append(f"{label}: " + "、".join(components))
+        if heat_items:
+            lines.append("・過熱感・価格位置: " + " / ".join(heat_items) + "。")
+
+        strength_items = []
+        for prefix, label, _ in timeframes:
             adx = cls._number(values, f"{prefix}.adx_14")
             atr = cls._number(values, f"{prefix}.atr_14_percent")
             components = []
-            if percent_b is not None:
-                components.append(
-                    f"ボリンジャー%B {percent_b:.1f}（{cls._bollinger_label(percent_b)}）"
-                )
             if adx is not None:
-                components.append(
-                    f"ADX {adx:.1f}（{cls._adx_label(adx)}。方向は他指標で確認）"
-                )
+                components.append(f"ADX {adx:.1f}（{cls._adx_label(adx)}）")
             if atr is not None:
-                components.append(
-                    f"ATR比率 {atr:.1f}%（{cls._atr_label(atr)}）"
-                )
+                components.append(f"ATR {atr:.1f}%（{cls._atr_label(atr)}）")
             if components:
-                lines.append(f"・{label}変動・トレンド強度: " + " / ".join(components))
+                strength_items.append(f"{label}: " + "、".join(components))
 
         momentum_items = []
         for sessions, label in ((5, "5日"), (20, "20日"), (60, "60日")):
@@ -156,16 +230,86 @@ class AnalysisCommentary:
             if value is not None:
                 momentum_items.append(f"{label}{value:+.1f}%")
         volume = cls._number(values, "daily.volume_ratio_20")
-        if momentum_items or volume is not None:
-            suffix = ""
+        if strength_items or momentum_items or volume is not None:
+            details = list(strength_items)
+            if momentum_items:
+                details.append("騰落率 " + " / ".join(momentum_items))
             if volume is not None:
-                suffix = (
-                    f" / 出来高は20日平均比{volume:.0f}%"
-                    f"（{cls._volume_label(volume)}）"
+                details.append(
+                    f"出来高20日平均比{volume:.0f}%（{cls._volume_label(volume)}）"
                 )
-            lines.append("・短中期モメンタム: " + " / ".join(momentum_items) + suffix)
+            lines.append("・強さ・変動リスク: " + " / ".join(details) + "。")
 
         return "\n".join(lines) or "テクニカル指標を十分に取得できていません。"
+
+    @classmethod
+    def _moving_average_state(
+        cls,
+        values: Mapping[str, object],
+        prefix: str,
+        periods: tuple[int, ...],
+    ) -> tuple[str | None, list[tuple[int, float]]]:
+        close = cls._number(values, f"{prefix}.close")
+        if close is None:
+            return None, []
+        distances = []
+        for period in periods:
+            average = cls._number(values, f"{prefix}.sma_{period}")
+            if average in (None, 0):
+                continue
+            distance = cls._number(
+                values, f"{prefix}.price_vs_sma_{period}_percent"
+            )
+            if distance is None:
+                distance = (close / average - 1) * 100
+            distances.append((period, distance))
+        if not distances:
+            return None, []
+        if all(distance >= 0 for _, distance in distances):
+            state = "上昇基調"
+        elif all(distance < 0 for _, distance in distances):
+            state = "下落基調"
+        else:
+            state = "方向感が混在"
+        return state, distances
+
+    @staticmethod
+    def _trend_outlook(states: Mapping[str, str]) -> str:
+        short = states.get("短期")
+        long = states.get("長期")
+        if short == "上昇基調" and long == "下落基調":
+            return "長期的には下落トレンドですが、短期的には反発・上昇しています"
+        if short == "下落基調" and long == "上昇基調":
+            return "長期上昇トレンド内の短期調整と見られます"
+        if states and all(value == "上昇基調" for value in states.values()):
+            return "短期から長期まで上昇方向がそろっています"
+        if states and all(value == "下落基調" for value in states.values()):
+            return "短期から長期まで下落方向がそろっています"
+        return "時間軸によって方向が異なるため、転換確認が必要です"
+
+    @staticmethod
+    def _rsi_outlook(
+        states: Mapping[str, str],
+        falling: Mapping[str, bool],
+    ) -> str:
+        monthly = states.get("monthly")
+        daily = states.get("daily")
+        weekly = states.get("weekly")
+        if monthly == "売られ過ぎ圏" and daily == weekly == "中立圏":
+            if falling.get("daily") or falling.get("weekly"):
+                return (
+                    "月足は売られ過ぎですが、週足・日足は中立圏で低下中のため、"
+                    "短中期にはさらに下げる可能性も残ります"
+                )
+            return (
+                "月足は売られ過ぎですが、週足・日足は中立圏で、"
+                "短中期の反転はまだ確認できません"
+            )
+        if states and all(value == "売られ過ぎ圏" for value in states.values()):
+            return "全時間軸で売られ過ぎですが、反発開始の確認が必要です"
+        if states and all(value == "買われ過ぎ圏" for value in states.values()):
+            return "全時間軸で買われ過ぎとなり、反落リスクに注意が必要です"
+        return "時間軸ごとの過熱感が異なるため、短期の方向変化を確認してください"
 
     @staticmethod
     def _change_label(value: float | None, previous: float | None) -> str | None:

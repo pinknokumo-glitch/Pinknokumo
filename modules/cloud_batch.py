@@ -401,11 +401,21 @@ def _compute_group(
                         summary,
                         preference.trade_direction,
                     ))
-                backtest_comment = (
-                    str(result["comment"])
-                    if result and result.get("comment")
-                    else None
-                )
+                backtest_comment = None
+                if result:
+                    summary = result.get("summary")
+                    expectation = result.get("expectation")
+                    if isinstance(summary, Mapping) and isinstance(
+                        expectation, Mapping
+                    ):
+                        backtest_comment = AnalysisCommentary().backtest_comment(
+                            summary,
+                            expectation,
+                            holding_days=preference.holding_days,
+                            position_side=preference.trade_direction,
+                            evaluation_mode=preference.expectation_evaluation_mode,
+                            target_return_percent=preference.target_return_percent,
+                        )
                 comments[code] = AnalysisCommentary.integrated_comment(
                     hit, backtest_comment
                 )

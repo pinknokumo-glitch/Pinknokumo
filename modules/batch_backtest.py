@@ -80,7 +80,14 @@ class BatchBacktester:
                     "entry_rule": rule,
                     "exit_rule": exit_rule,
                     "summary": summary, "expectation": expectation,
-                    "comment": self.commentary.backtest_comment(summary, expectation),
+                    "comment": self.commentary.backtest_comment(
+                        summary,
+                        expectation,
+                        holding_days=holding_days,
+                        position_side=position_side,
+                        evaluation_mode=evaluation_mode,
+                        target_return_percent=target_return_percent,
+                    ),
                 }
                 as_of_date = prices.iloc[-1]["trade_date"].date().isoformat()
                 self.db.save_analysis_snapshot(code, as_of_date, profile_name, "backtest", result)
