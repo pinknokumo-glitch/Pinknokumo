@@ -49,25 +49,176 @@ class AnalysisCommentary:
 
     @classmethod
     def _technical_comment(cls, values: Mapping[str, object]) -> str:
-        rsi_values = [(label, cls._number(values, key)) for label, key in (
-            ("日足", "daily.rsi_14"), ("週足", "weekly.rsi_14"), ("月足", "monthly.rsi_14"),
-        )]
-        available_rsi = [(label, value) for label, value in rsi_values if value is not None]
-        parts = []
-        if available_rsi:
-            parts.append("RSIは" + "、".join(f"{label}{value:.1f}" for label, value in available_rsi) + "です。")
-        close = cls._number(values, "daily.close")
-        sma25 = cls._number(values, "daily.sma_25")
-        sma75 = cls._number(values, "daily.sma_75")
-        if close is not None and sma25 is not None:
-            parts.append(f"終値は25日移動平均を{'上回って' if close > sma25 else '下回って'}います。")
-        if close is not None and sma75 is not None:
-            parts.append(f"75日移動平均との位置関係は{'上側' if close > sma75 else '下側'}です。")
-        macd = cls._number(values, "daily.macd")
-        signal = cls._number(values, "daily.macd_signal")
-        if macd is not None and signal is not None:
-            parts.append(f"MACDはシグナルを{'上回って' if macd > signal else '下回って'}います。")
-        return "".join(parts) or "テクニカル指標を十分に取得できていません。"
+        lines: list[str] = []
+        timeframes = (
+            ("daily", "日足", "日"),
+            ("weekly", "週足", "週"),
+            ("monthly", "月足", "か月"),
+        )
+
+        rsi_items = []
+        for prefix, label, _ in timeframes:
+            value = cls._number(values, f"{prefix}.rsi_14")
+            if value is None:
+                continue
+            previous = cls._number(values, f"{prefix}.rsi_14_previous")
+            change = cls._change_label(value, previous)
+            rsi_items.append(
+                f"{label}{value:.1f}（{cls._rsi_label(value)}"
+                + (f"、前回比{change}" if change else "")
+                + "）"
+            )
+        if rsi_items:
+            lines.append("・RSI: " + " / ".join(rsi_items))
+
+        for prefix, label, unit in timeframes:
+            close = cls._number(values, f"{prefix}.close")
+            averages = []
+            for period in (5, 25, 75, 200):
+                average = cls._number(values, f"{prefix}.sma_{period}")
+                if close is None or average is None:
+                    continue
+                distance = cls._number(
+                    values, f"{prefix}.price_vs_sma_{period}_percent"
+                )
+                if distance is None and average:
+                    distance = (close / average - 1) * 100
+                averages.append(
+                    f"{period}{unit}線{average:,.1f}"
+                    f"（乖離{distance:+.1f}%、{'上側' if close >= average else '下側'}）"
+                )
+            if averages:
+                lines.append(
+                    f"・{label}トレンド: 終値{close:,.1f} / " + " / ".join(averages)
+                )
+
+        for prefix, label, _ in timeframes:
+            macd = cls._number(values, f"{prefix}.macd")
+            signal = cls._number(values, f"{prefix}.macd_signal")
+            histogram = cls._number(values, f"{prefix}.macd_histogram")
+            if macd is None or signal is None:
+                continue
+            previous_histogram = cls._number(
+                values, f"{prefix}.macd_histogram_previous"
+            )
+            momentum = "上向き" if macd >= signal else "下向き"
+            histogram_change = cls._change_label(histogram, previous_histogram)
+            histogram_text = f"{histogram:.2f}" if histogram is not None else "-"
+            lines.append(
+                f"・{label}MACD: {macd:.2f}、シグナル{signal:.2f}"
+                f"（{momentum}、ヒストグラム"
+                f"{histogram_text}"
+                + (f"・前回比{histogram_change}" if histogram_change else "")
+                + "）"
+            )
+
+        for prefix, label, _ in timeframes:
+            k = cls._number(values, f"{prefix}.stoch_k")
+            d = cls._number(values, f"{prefix}.stoch_d")
+            if k is None or d is None:
+                continue
+            zone = (
+                "売られ過ぎ圏"
+                if max(k, d) <= 20
+                else "買われ過ぎ圏"
+                if min(k, d) >= 80
+                else "中立圏"
+            )
+            cross = "%Kが%Dを上回る" if k >= d else "%Kが%Dを下回る"
+            lines.append(
+                f"・{label}ストキャスティクス: %K {k:.1f} / %D {d:.1f}"
+                f"（{zone}、{cross}）"
+            )
+
+        for prefix, label, _ in timeframes:
+            percent_b = cls._number(values, f"{prefix}.bb_percent_b")
+            adx = cls._number(values, f"{prefix}.adx_14")
+            atr = cls._number(values, f"{prefix}.atr_14_percent")
+            components = []
+            if percent_b is not None:
+                components.append(
+                    f"ボリンジャー%B {percent_b:.1f}（{cls._bollinger_label(percent_b)}）"
+                )
+            if adx is not None:
+                components.append(
+                    f"ADX {adx:.1f}（{cls._adx_label(adx)}。方向は他指標で確認）"
+                )
+            if atr is not None:
+                components.append(
+                    f"ATR比率 {atr:.1f}%（{cls._atr_label(atr)}）"
+                )
+            if components:
+                lines.append(f"・{label}変動・トレンド強度: " + " / ".join(components))
+
+        momentum_items = []
+        for sessions, label in ((5, "5日"), (20, "20日"), (60, "60日")):
+            value = cls._number(values, f"daily.return_{sessions}_percent")
+            if value is not None:
+                momentum_items.append(f"{label}{value:+.1f}%")
+        volume = cls._number(values, "daily.volume_ratio_20")
+        if momentum_items or volume is not None:
+            suffix = ""
+            if volume is not None:
+                suffix = (
+                    f" / 出来高は20日平均比{volume:.0f}%"
+                    f"（{cls._volume_label(volume)}）"
+                )
+            lines.append("・短中期モメンタム: " + " / ".join(momentum_items) + suffix)
+
+        return "\n".join(lines) or "テクニカル指標を十分に取得できていません。"
+
+    @staticmethod
+    def _change_label(value: float | None, previous: float | None) -> str | None:
+        if value is None or previous is None:
+            return None
+        change = value - previous
+        if abs(change) < 0.1:
+            return "横ばい"
+        return f"{change:+.1f}（{'上昇' if change > 0 else '低下'}）"
+
+    @staticmethod
+    def _rsi_label(value: float) -> str:
+        if value <= 30:
+            return "売られ過ぎ圏"
+        if value >= 70:
+            return "買われ過ぎ圏"
+        return "中立圏"
+
+    @staticmethod
+    def _bollinger_label(value: float) -> str:
+        if value < 0:
+            return "下限バンド割れ"
+        if value <= 20:
+            return "下限バンド付近"
+        if value < 80:
+            return "バンド中央域"
+        if value <= 100:
+            return "上限バンド付近"
+        return "上限バンド超え"
+
+    @staticmethod
+    def _adx_label(value: float) -> str:
+        if value < 20:
+            return "明確なトレンドは弱い"
+        if value < 25:
+            return "トレンド形成の兆候"
+        return "トレンドが強い"
+
+    @staticmethod
+    def _atr_label(value: float) -> str:
+        if value < 1.5:
+            return "値動きは比較的小さい"
+        if value < 4:
+            return "値動きは中程度"
+        return "値動きが大きくリスク管理に注意"
+
+    @staticmethod
+    def _volume_label(value: float) -> str:
+        if value >= 150:
+            return "商いが活発"
+        if value < 70:
+            return "商いが低調"
+        return "通常水準"
 
     @classmethod
     def _fundamental_comment(cls, values: Mapping[str, object]) -> str:
