@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
+import math
 import pandas as pd
 
 from modules.rule_engine import RuleEngine
@@ -210,9 +211,18 @@ class Backtester:
                 "conditional_return_p25_percent": None,
                 "conditional_return_p75_percent": None,
                 "median_sessions_to_outcome": None,
+                "out_of_sample_trade_count": 0,
+                "out_of_sample_average_return_percent": None,
+                "out_of_sample_win_rate_percent": None,
+                "out_of_sample_outcome_probability_percent": None,
+                "out_of_sample_max_drawdown_percent": None,
             }
-        frame = pd.DataFrame(asdict(trade) for trade in trades)
+        frame = pd.DataFrame(asdict(trade) for trade in trades).sort_values(
+            "signal_date"
+        )
         reached = frame.loc[frame["target_reached"]]
+        out_of_sample_count = max(1, math.ceil(len(frame) * 0.2))
+        out_of_sample = frame.tail(out_of_sample_count)
         return {
             "trade_count": len(frame),
             "average_return_percent": float(frame["return_percent"].mean()),
@@ -233,6 +243,23 @@ class Backtester:
             ),
             "median_sessions_to_outcome": (
                 float(reached["sessions_held"].median()) if not reached.empty else None
+            ),
+            # Chronological holdout: the newest 20% of trades are kept separate
+            # from the earlier observations. This is not a promise of future
+            # performance, but it makes deterioration outside the older sample
+            # visible to the client.
+            "out_of_sample_trade_count": len(out_of_sample),
+            "out_of_sample_average_return_percent": float(
+                out_of_sample["return_percent"].mean()
+            ),
+            "out_of_sample_win_rate_percent": float(
+                (out_of_sample["return_percent"] > 0).mean() * 100
+            ),
+            "out_of_sample_outcome_probability_percent": float(
+                out_of_sample["target_reached"].mean() * 100
+            ),
+            "out_of_sample_max_drawdown_percent": float(
+                out_of_sample["max_drawdown_percent"].min()
             ),
         }
 

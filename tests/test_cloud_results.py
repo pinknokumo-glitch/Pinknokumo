@@ -42,6 +42,23 @@ class CloudResultPublisherTests(unittest.TestCase):
                     "estimated_price_high": 1140.0,
                     "estimate_sample_count": 42,
                     "median_days_to_outcome": 18.0,
+                    "individual_trade_count": 25,
+                    "individual_out_of_sample_trade_count": 5,
+                    "individual_out_of_sample_average_return_percent": 4.2,
+                    "individual_out_of_sample_win_rate_percent": 60.0,
+                    "sector_name": "輸送用機器",
+                    "sector_backtest": {
+                        "stock_count": 20,
+                        "trade_count": 300,
+                        "average_return_percent": 3.1,
+                    },
+                    "market_backtest": {
+                        "stock_count": 200,
+                        "trade_count": 3000,
+                        "average_return_percent": 2.2,
+                    },
+                    "backtest_coverage_ratio": 0.97,
+                    "backtest_confidence": "高",
                 }],
                 {"72030": "comment"}, ["https://example.com/72030.png"],
                 holding_days=20,
@@ -70,6 +87,12 @@ class CloudResultPublisherTests(unittest.TestCase):
         self.assertEqual(payload[0]["estimated_price_high"], 1140.0)
         self.assertEqual(payload[0]["estimate_sample_count"], 42)
         self.assertEqual(payload[0]["median_days_to_outcome"], 18.0)
+        self.assertEqual(payload[0]["individual_trade_count"], 25)
+        self.assertEqual(payload[0]["sector_name"], "輸送用機器")
+        self.assertEqual(payload[0]["sector_backtest"]["stock_count"], 20)
+        self.assertEqual(payload[0]["market_backtest"]["trade_count"], 3000)
+        self.assertEqual(payload[0]["backtest_coverage_ratio"], 0.97)
+        self.assertEqual(payload[0]["backtest_confidence"], "高")
         self.assertIn("on_conflict=user_id,screening_date,profile_name,code", request.full_url)
 
     def test_replace_deletes_only_the_target_users_previous_results(self) -> None:

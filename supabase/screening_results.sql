@@ -25,6 +25,15 @@ create table if not exists public.screening_results (
   estimated_price_high double precision,
   estimate_sample_count integer not null default 0,
   median_days_to_outcome double precision,
+  individual_trade_count integer not null default 0,
+  individual_out_of_sample_trade_count integer not null default 0,
+  individual_out_of_sample_average_return_percent double precision,
+  individual_out_of_sample_win_rate_percent double precision,
+  sector_name text,
+  sector_backtest jsonb not null default '{}'::jsonb,
+  market_backtest jsonb not null default '{}'::jsonb,
+  backtest_coverage_ratio double precision,
+  backtest_confidence text,
   updated_at timestamptz not null default now(),
   primary key (user_id, screening_date, profile_name, code)
 );
@@ -61,6 +70,24 @@ alter table public.screening_results
 add column if not exists estimate_sample_count integer not null default 0;
 alter table public.screening_results
 add column if not exists median_days_to_outcome double precision;
+alter table public.screening_results
+add column if not exists individual_trade_count integer not null default 0;
+alter table public.screening_results
+add column if not exists individual_out_of_sample_trade_count integer not null default 0;
+alter table public.screening_results
+add column if not exists individual_out_of_sample_average_return_percent double precision;
+alter table public.screening_results
+add column if not exists individual_out_of_sample_win_rate_percent double precision;
+alter table public.screening_results
+add column if not exists sector_name text;
+alter table public.screening_results
+add column if not exists sector_backtest jsonb not null default '{}'::jsonb;
+alter table public.screening_results
+add column if not exists market_backtest jsonb not null default '{}'::jsonb;
+alter table public.screening_results
+add column if not exists backtest_coverage_ratio double precision;
+alter table public.screening_results
+add column if not exists backtest_confidence text;
 
 create index if not exists screening_results_user_date_idx
 on public.screening_results (user_id, screening_date desc, position);

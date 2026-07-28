@@ -777,7 +777,9 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.18.1",
+        "バージョン" to "StockAI Navigator 0.19.0",
+        "0.19.0" to "同じ売買条件を個別銘柄・同業種・取得全銘柄で比較。直近20%の期間外検証、対象銘柄数・事例数・カバー率・データ充足度を追加。",
+        "0.18.2" to "Supabase認証期限切れ時にセッションを自動更新。",
         "0.18.1" to "過去事例0件をスコア0.0と誤表示しないよう修正。監視対象から最新のクラウド分析詳細を表示。",
         "0.18.0" to "配信結果をスコア・平均リターン・勝率・最大含み損の一覧へ簡潔化。タップ式の分析詳細とユーザー別の監視登録を追加。",
         "0.17.1" to "長期検証の履歴不足を明示し、達成事例0件の場合も参考価格の算出状態を表示。",
@@ -1311,6 +1313,73 @@ private fun CloudResultDetailScreen(
                     }
                 }
             }
+            item {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            "バックテスト比較",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            "同じ売買条件を個別・同業種・取得全銘柄で検証",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "平均リターンは各売買事例の損益率の算術平均。" +
+                                "同業種・全銘柄は事例数で加重集計します。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        BacktestScopeRow(
+                            "この銘柄",
+                            PooledBacktestSummary(
+                                stockCount = 1,
+                                tradeCount = result.individualTradeCount,
+                                averageReturnPercent =
+                                    result.averageReturnPercent,
+                                winRatePercent = result.winRatePercent,
+                                maxDrawdownPercent =
+                                    result.maxDrawdownPercent,
+                                outOfSampleTradeCount =
+                                    result.individualOutOfSampleTradeCount,
+                                outOfSampleAverageReturnPercent =
+                                    result.individualOutOfSampleAverageReturnPercent,
+                                outOfSampleWinRatePercent =
+                                    result.individualOutOfSampleWinRatePercent,
+                            ),
+                        )
+                        HorizontalDivider()
+                        BacktestScopeRow(
+                            result.sectorName?.let { "同業種（$it）" }
+                                ?: "同業種",
+                            result.sectorBacktest,
+                        )
+                        HorizontalDivider()
+                        BacktestScopeRow("取得全銘柄", result.marketBacktest)
+                        val coverage = result.backtestCoverageRatio
+                        Text(
+                            "データ充足度: ${result.backtestConfidence ?: "低"}" +
+                                if (coverage != null) {
+                                    " / 全銘柄カバー率 " +
+                                        String.format("%.1f%%", coverage * 100)
+                                } else {
+                                    ""
+                                },
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "直近20%は過去の古い期間と分けた期間外検証です。" +
+                                "母数が多くても将来の利益を保証するものではありません。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             result.referencePrice?.let { price ->
                 item {
                     ElevatedCard(Modifier.fillMaxWidth()) {
@@ -1396,6 +1465,45 @@ private fun CloudResultDetailScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun BacktestScopeRow(
+    label: String,
+    summary: PooledBacktestSummary,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "$label / ${summary.stockCount}銘柄・${summary.tradeCount}事例",
+            fontWeight = FontWeight.Bold,
+        )
+        Row(Modifier.fillMaxWidth()) {
+            ResultMetric(
+                "平均リターン",
+                summary.averageReturnPercent.percentValue(),
+                Modifier.weight(1f),
+            )
+            ResultMetric(
+                "勝率",
+                summary.winRatePercent.percentValue(),
+                Modifier.weight(1f),
+            )
+            ResultMetric(
+                "最大含み損",
+                summary.maxDrawdownPercent.percentValue(),
+                Modifier.weight(1f),
+            )
+        }
+        if (summary.outOfSampleTradeCount > 0) {
+            Text(
+                "直近20%（${summary.outOfSampleTradeCount}事例）: " +
+                    "平均 ${summary.outOfSampleAverageReturnPercent.percentValue()} / " +
+                    "勝率 ${summary.outOfSampleWinRatePercent.percentValue()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -1770,7 +1878,7 @@ private fun ScreeningScreen(
                 expectationGenreId = loaded.genres.firstOrNull()?.id
             }
             .onFailure {
-                val loaded = builtInScreeningOptions()
+                val loaded = jp.stockai.navigator.builtInScreeningOptions()
                 localApiAvailable = false
                 options = loaded
                 genreId = loaded.genres.firstOrNull()?.id

@@ -132,6 +132,21 @@ class SupabaseSchemaTests(unittest.TestCase):
         self.assertNotIn("delete from", sql)
         self.assertNotIn("drop table", sql)
 
+    def test_pooled_backtest_upgrade_is_rerunnable(self) -> None:
+        sql = compact_sql("pooled_backtest_upgrade.sql")
+        expected = (
+            "add column if not exists individual_trade_count integer not null default 0;",
+            "add column if not exists sector_backtest jsonb not null default '{}'::jsonb;",
+            "add column if not exists market_backtest jsonb not null default '{}'::jsonb;",
+            "add column if not exists backtest_coverage_ratio double precision;",
+            "add column if not exists backtest_confidence text;",
+        )
+        for statement in expected:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, sql)
+        self.assertNotIn("delete from", sql)
+        self.assertNotIn("drop table", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

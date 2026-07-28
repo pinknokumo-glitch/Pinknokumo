@@ -76,6 +76,35 @@ class CloudResultPublisher:
                 "median_days_to_outcome": self._finite_number(
                     hit.get("median_days_to_outcome")
                 ),
+                "individual_trade_count": int(
+                    hit.get("individual_trade_count") or 0
+                ),
+                "individual_out_of_sample_trade_count": int(
+                    hit.get("individual_out_of_sample_trade_count") or 0
+                ),
+                "individual_out_of_sample_average_return_percent":
+                    self._finite_number(
+                        hit.get(
+                            "individual_out_of_sample_average_return_percent"
+                        )
+                    ),
+                "individual_out_of_sample_win_rate_percent":
+                    self._finite_number(
+                        hit.get(
+                            "individual_out_of_sample_win_rate_percent"
+                        )
+                    ),
+                "sector_name": hit.get("sector_name"),
+                "sector_backtest": self._finite_mapping(
+                    hit.get("sector_backtest")
+                ),
+                "market_backtest": self._finite_mapping(
+                    hit.get("market_backtest")
+                ),
+                "backtest_coverage_ratio": self._finite_number(
+                    hit.get("backtest_coverage_ratio")
+                ),
+                "backtest_confidence": hit.get("backtest_confidence"),
             })
         request = Request(
             f"{self.url}/rest/v1/screening_results"
@@ -204,4 +233,17 @@ class CloudResultPublisher:
         except (TypeError, ValueError):
             return None
         return number if math.isfinite(number) else None
+
+    @classmethod
+    def _finite_mapping(cls, value: object) -> dict[str, object]:
+        if not isinstance(value, Mapping):
+            return {}
+        return {
+            str(key): (
+                cls._finite_number(item)
+                if isinstance(item, float)
+                else item
+            )
+            for key, item in value.items()
+        }
 
