@@ -18,6 +18,7 @@ from modules.cloud_preferences import (
 )
 from modules.cloud_results import CloudResultPublisher
 from modules.database import Database
+from modules.pooled_backtest import attach_scope_comparisons
 from modules.repository import StockRepository
 from modules.rule_engine import RuleEngine
 from modules.screener import Screener
@@ -185,7 +186,7 @@ def run_cloud_batch(
             outcome = _compute_group(
                 database, signature, members[0], options, screening_config,
                 indicator_config, backtest_config, scoring_config,
-                snapshots, company_names, rule_engine,
+                snapshots, company_names, sector_names, rule_engine,
                 max_hits_per_group=max_hits_per_group,
                 settings=settings,
             )
@@ -249,6 +250,7 @@ def run_cloud_batch(
             "backtest_requested_count": outcome["backtest_requested_count"],
             "backtest_reused_count": outcome["backtest_reused_count"],
             "history_backfill": outcome["history_backfill"],
+            "pooled_backtest": outcome["pooled_backtest"],
         })
     return {
         "preference_count": len(preferences),
@@ -282,6 +284,7 @@ def _compute_group(
     scoring_config: Mapping[str, object],
     snapshots: Sequence[Mapping[str, object]],
     company_names: Mapping[str, object],
+    sector_names: Mapping[str, object],
     rule_engine: RuleEngine,
     max_hits_per_group: int = 100,
     settings: Mapping[str, object] | None = None,
@@ -376,8 +379,54 @@ def _compute_group(
                 evaluation_mode=preference.expectation_evaluation_mode,
                 target_return_percent=preference.target_return_percent,
             )
+        universe_codes = list(dict.fromkeys(
+            str(snapshot["code"]) for snapshot in snapshots
+        ))
+        pooled_limit = max(
+            len(hit_codes),
+            int(
+                ((settings or {}).get("cloud_screening") or {}).get(
+                    "pooled_backtest_max_codes", 5000
+                )
+            ),
+        )
+        pooled_codes = list(dict.fromkeys([
+            *hit_codes,
+            *sorted(universe_codes),
+        ]))[:pooled_limit]
+        pooled_missing = _codes_without_current_summary(
+            database, pooled_codes, effective_profile
+        )
+        # Matched stocks were refreshed above. The remaining per-stock results
+        # are reusable for this stable condition profile and make the first full
+        # market calculation the only expensive run.
+        pooled_missing = [
+            code for code in pooled_missing if code not in missing_codes
+        ]
+        if pooled_missing:
+            BatchBacktester(
+                database, indicator_config, backtest_config, scoring_config
+            ).run(
+                effective_profile,
+                effective_rule,
+                preference.holding_days,
+                codes=pooled_missing,
+                exit_rule=expectation_rule,
+                position_side=preference.trade_direction,
+                evaluation_mode=preference.expectation_evaluation_mode,
+                target_return_percent=preference.target_return_percent,
+            )
         with database.connect() as connection:
             repository = StockRepository(connection)
+            pooled_summaries: dict[str, Mapping[str, object]] = {}
+            for code in pooled_codes:
+                pooled_result = repository.latest_backtest_result(
+                    code, effective_profile
+                )
+                if isinstance(pooled_result, Mapping):
+                    pooled_summary = pooled_result.get("summary")
+                    if isinstance(pooled_summary, Mapping):
+                        pooled_summaries[code] = pooled_summary
             for hit in hits:
                 code = str(hit["code"])
                 result = repository.latest_backtest_result(code, effective_profile)
@@ -419,6 +468,12 @@ def _compute_group(
                 comments[code] = AnalysisCommentary.integrated_comment(
                     hit, backtest_comment
                 )
+        pooled_backtest = attach_scope_comparisons(
+            hits,
+            pooled_summaries,
+            sector_names,
+            len(universe_codes),
+        )
         # The entry decision is made from the common pre-backfill snapshot.
         # Historical rows downloaded for expectation analysis must not silently
         # remove an already selected stock by screening it a second time.
@@ -448,6 +503,11 @@ def _compute_group(
         "backtest_requested_count": backtest_requested_count,
         "backtest_reused_count": backtest_reused_count,
         "history_backfill": history_backfill,
+        "pooled_backtest": pooled_backtest if hits else {
+            "universe_count": len(snapshots),
+            "tested_stock_count": 0,
+            "coverage_ratio": 0.0,
+        },
     }
 
 
@@ -481,6 +541,36 @@ def _codes_requiring_backtest(
         summary = result.get("summary", {})
         if "conditional_median_return_percent" in summary:
             cached.add(str(row[0]))
+    return [str(code) for code in codes if str(code) not in cached]
+
+
+def _codes_without_current_summary(
+    database: Database,
+    codes: Sequence[str],
+    profile_name: str,
+) -> list[str]:
+    """Find profile results missing the new chronological holdout metrics."""
+    if not codes:
+        return []
+    cached: set[str] = set()
+    # Keep below SQLite's commonly configured parameter limit.
+    for start in range(0, len(codes), 500):
+        chunk = [str(code) for code in codes[start:start + 500]]
+        placeholders = ",".join("?" for _ in chunk)
+        with database.connect() as connection:
+            rows = connection.execute(
+                f"""SELECT code, result_json FROM analysis_snapshot
+                    WHERE analysis_type='backtest' AND profile_name=?
+                      AND code IN ({placeholders})
+                    ORDER BY as_of_date DESC, created_at DESC""",
+                [profile_name, *chunk],
+            ).fetchall()
+        for row in rows:
+            if str(row["code"]) in cached:
+                continue
+            summary = json.loads(row["result_json"]).get("summary", {})
+            if "out_of_sample_trade_count" in summary:
+                cached.add(str(row["code"]))
     return [str(code) for code in codes if str(code) not in cached]
 
 

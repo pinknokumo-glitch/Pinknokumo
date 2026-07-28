@@ -51,6 +51,25 @@ data class CloudScreeningResult(
     val estimatedPriceHigh: Double?,
     val estimateSampleCount: Int,
     val medianDaysToOutcome: Double?,
+    val individualTradeCount: Int,
+    val individualOutOfSampleTradeCount: Int,
+    val individualOutOfSampleAverageReturnPercent: Double?,
+    val individualOutOfSampleWinRatePercent: Double?,
+    val sectorName: String?,
+    val sectorBacktest: PooledBacktestSummary,
+    val marketBacktest: PooledBacktestSummary,
+    val backtestCoverageRatio: Double?,
+    val backtestConfidence: String?,
+)
+data class PooledBacktestSummary(
+    val stockCount: Int = 0,
+    val tradeCount: Int = 0,
+    val averageReturnPercent: Double? = null,
+    val winRatePercent: Double? = null,
+    val maxDrawdownPercent: Double? = null,
+    val outOfSampleTradeCount: Int = 0,
+    val outOfSampleAverageReturnPercent: Double? = null,
+    val outOfSampleWinRatePercent: Double? = null,
 )
 data class CloudScreeningRun(
     val screeningDate: String,
@@ -272,6 +291,11 @@ class SupabaseClient(
                 ",average_return_percent,win_rate_percent,max_drawdown_percent" +
                 ",reference_price,estimated_price_median,estimated_price_low,estimated_price_high" +
                 ",estimate_sample_count,median_days_to_outcome" +
+                ",individual_trade_count,individual_out_of_sample_trade_count" +
+                ",individual_out_of_sample_average_return_percent" +
+                ",individual_out_of_sample_win_rate_percent,sector_name" +
+                ",sector_backtest,market_backtest,backtest_coverage_ratio" +
+                ",backtest_confidence" +
                 "&order=screening_date.desc,position.asc&limit=$safeLimit",
             token = session.accessToken,
         )
@@ -327,8 +351,61 @@ class SupabaseClient(
                     medianDaysToOutcome = row.optDouble(
                         "median_days_to_outcome"
                     ).takeUnless { it.isNaN() },
+                    individualTradeCount = row.optInt(
+                        "individual_trade_count", 0
+                    ),
+                    individualOutOfSampleTradeCount = row.optInt(
+                        "individual_out_of_sample_trade_count", 0
+                    ),
+                    individualOutOfSampleAverageReturnPercent = row.optDouble(
+                        "individual_out_of_sample_average_return_percent"
+                    ).takeUnless { it.isNaN() },
+                    individualOutOfSampleWinRatePercent = row.optDouble(
+                        "individual_out_of_sample_win_rate_percent"
+                    ).takeUnless { it.isNaN() },
+                    sectorName = row.optString("sector_name").takeIf {
+                        it.isNotEmpty()
+                    },
+                    sectorBacktest = pooledBacktestSummary(
+                        row.optJSONObject("sector_backtest")
+                    ),
+                    marketBacktest = pooledBacktestSummary(
+                        row.optJSONObject("market_backtest")
+                    ),
+                    backtestCoverageRatio = row.optDouble(
+                        "backtest_coverage_ratio"
+                    ).takeUnless { it.isNaN() },
+                    backtestConfidence = row.optString(
+                        "backtest_confidence"
+                    ).takeIf { it.isNotEmpty() },
                 )
             }
+    }
+
+    private fun pooledBacktestSummary(value: JSONObject?): PooledBacktestSummary {
+        val row = value ?: JSONObject()
+        return PooledBacktestSummary(
+            stockCount = row.optInt("stock_count", 0),
+            tradeCount = row.optInt("trade_count", 0),
+            averageReturnPercent = row.optDouble(
+                "average_return_percent"
+            ).takeUnless { it.isNaN() },
+            winRatePercent = row.optDouble(
+                "win_rate_percent"
+            ).takeUnless { it.isNaN() },
+            maxDrawdownPercent = row.optDouble(
+                "max_drawdown_percent"
+            ).takeUnless { it.isNaN() },
+            outOfSampleTradeCount = row.optInt(
+                "out_of_sample_trade_count", 0
+            ),
+            outOfSampleAverageReturnPercent = row.optDouble(
+                "out_of_sample_average_return_percent"
+            ).takeUnless { it.isNaN() },
+            outOfSampleWinRatePercent = row.optDouble(
+                "out_of_sample_win_rate_percent"
+            ).takeUnless { it.isNaN() },
+        )
     }
 
     fun loadLatestRun(session: SupabaseSession): CloudScreeningRun? {

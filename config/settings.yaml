@@ -47,6 +47,9 @@ cloud_screening:
   backtest_history_period: "10y"
   backtest_history_chunk_size: 5
   backtest_minimum_signal_sessions: 252
+  # Run the same rule across the acquired universe and reuse each saved result.
+  # This guard is intentionally above the current listed-stock universe.
+  pooled_backtest_max_codes: 5000
 
 screening_universe:
   markets: [プライム, スタンダード, グロース]

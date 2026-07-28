@@ -1,6 +1,6 @@
 param(
     [string]$Repository = "pinknokumo-glitch/Pinknokumo",
-    [string]$Branch = "agent/android-result-cards-watchlist",
+    [string]$Branch = "agent/pooled-backtest-comparison",
     [switch]$RunWorkflow,
     [switch]$RunAndroidBuild
 )
@@ -56,6 +56,7 @@ $publishFiles = @(
     "modules/expectation.py",
     "modules/fundamentals.py",
     "modules/morning_candidates.py",
+    "modules/pooled_backtest.py",
     "modules/cloud_results.py",
     "modules/screener.py",
     "modules/screening_options.py",
@@ -91,15 +92,17 @@ $publishFiles = @(
     "supabase/holding_period_upgrade.sql",
     "supabase/conditional_price_estimate_upgrade.sql",
     "supabase/screening_result_summary_upgrade.sql",
+    "supabase/pooled_backtest_upgrade.sql",
     "tests/test_cloud_results.py",
     "tests/test_core.py",
-    "tests/test_data_loader.py"
+    "tests/test_data_loader.py",
+    "tests/test_pooled_backtest.py"
 )
 & $git add -- $publishFiles
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }
 $staged = (& $git diff --cached --name-only)
 if ($staged) {
-    & $git commit -m "Simplify Android result cards"
+    & $git commit -m "Add pooled backtest comparison"
     if ($LASTEXITCODE -ne 0) { throw "Could not create the prepared commit." }
 }
 

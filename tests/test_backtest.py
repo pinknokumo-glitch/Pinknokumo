@@ -54,6 +54,29 @@ class BacktestPointInTimeTestCase(unittest.TestCase):
         self.assertEqual(summary["conditional_return_p75_percent"], 17.5)
         self.assertEqual(summary["median_sessions_to_outcome"], 4.0)
 
+    def test_summary_keeps_latest_twenty_percent_as_holdout(self) -> None:
+        trades = []
+        for index in range(10):
+            date = f"2026-01-{index + 1:02d}"
+            trades.append(Trade(
+                signal_date=date,
+                entry_date=date,
+                exit_date=date,
+                entry_price=100.0,
+                exit_price=110.0 if index >= 8 else 100.0,
+                return_percent=10.0 if index >= 8 else 0.0,
+                max_favorable_excursion_percent=10.0,
+                max_drawdown_percent=-2.0,
+                target_reached=index >= 8,
+                sessions_held=1,
+            ))
+        summary = self.backtester.summarize(trades)
+        self.assertEqual(summary["out_of_sample_trade_count"], 2)
+        self.assertEqual(
+            summary["out_of_sample_average_return_percent"], 10.0
+        )
+        self.assertEqual(summary["out_of_sample_win_rate_percent"], 100.0)
+
     def test_financial_values_are_not_visible_before_disclosure(self) -> None:
         daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
         financials = pd.DataFrame({
