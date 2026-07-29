@@ -3,6 +3,7 @@
 package jp.stockai.navigator
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -104,17 +105,33 @@ private val StockAiTypography = Typography(
     ),
 )
 
+private class OnboardingStore(context: Context) {
+    private val preferences = context.getSharedPreferences(
+        "stockai_onboarding",
+        Context.MODE_PRIVATE,
+    )
+
+    fun isCompleted(userId: String): Boolean =
+        preferences.getBoolean("completed_$userId", false)
+
+    fun markCompleted(userId: String) {
+        preferences.edit().putBoolean("completed_$userId", true).apply()
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private var callbackSession by mutableStateOf<SupabaseSession?>(null)
     private var activeSession by mutableStateOf<SupabaseSession?>(null)
     private var launchPage by mutableStateOf("home")
     private lateinit var sessionStore: SessionStore
+    private lateinit var onboardingStore: OnboardingStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         launchPage = intent?.getStringExtra(EXTRA_START_PAGE)
             ?.takeIf { it in VALID_START_PAGES } ?: "home"
         sessionStore = SessionStore(applicationContext)
+        onboardingStore = OnboardingStore(applicationContext)
         NotificationScheduler.rescheduleSaved(applicationContext)
         callbackSession = runCatching { SupabaseClient().sessionFromCallback(intent?.data) }.getOrNull()
         callbackSession?.let(sessionStore::save)
@@ -143,6 +160,11 @@ class MainActivity : ComponentActivity() {
                         StockAiApp(
                             session = session,
                             initialPage = launchPage,
+                            requiresOnboarding = !onboardingStore.isCompleted(session.userId),
+                            onOnboardingCompleted = {
+                                onboardingStore.markCompleted(session.userId)
+                                launchPage = "home"
+                            },
                             onSessionUpdated = {
                                 sessionStore.save(it)
                                 activeSession = it
@@ -433,6 +455,8 @@ private fun StartupLoginScreen(
 private fun StockAiApp(
     session: SupabaseSession,
     initialPage: String = "home",
+    requiresOnboarding: Boolean,
+    onOnboardingCompleted: () -> Unit,
     onSessionUpdated: (SupabaseSession) -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -455,7 +479,9 @@ private fun StockAiApp(
     var selectedCode by remember { mutableStateOf<String?>(null) }
     var selectedResult by remember { mutableStateOf<CloudScreeningResult?>(null) }
     var showWatchlist by remember { mutableStateOf(false) }
-    var page by remember(initialPage) { mutableStateOf(initialPage) }
+    var page by remember(session.userId, initialPage, requiresOnboarding) {
+        mutableStateOf(if (requiresOnboarding) "onboarding_privacy" else initialPage)
+    }
     BackHandler(
         enabled = selectedResult != null ||
             selectedCode != null ||
@@ -463,6 +489,8 @@ private fun StockAiApp(
             page != "home"
     ) {
         when {
+            page == "onboarding_privacy" -> Unit
+            page == "onboarding_tutorial" -> page = "onboarding_privacy"
             selectedResult != null -> selectedResult = null
             selectedCode != null -> selectedCode = null
             showWatchlist -> showWatchlist = false
@@ -495,6 +523,16 @@ private fun StockAiApp(
             },
         )
         else -> when (page) {
+            "onboarding_privacy" -> OnboardingPrivacyScreen(
+                onContinue = { page = "onboarding_tutorial" },
+            )
+            "onboarding_tutorial" -> TutorialScreen(
+                onBack = { page = "onboarding_privacy" },
+                onComplete = {
+                    onOnboardingCompleted()
+                    page = "home"
+                },
+            )
             "home" -> HomeMenuScreen(onOpen = { page = it })
             "results" -> DeliveryResultsScreen(
                 session,
@@ -641,8 +679,83 @@ private fun MenuScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     }
 }
 
+private val privacyItems = listOf(
+    "個人情報" to "認証にはSupabaseを利用します。パスワードをアプリ独自のデータベースへ保存しません。",
+    "設定データ" to "ソート条件、期待値条件、分析依頼はログインユーザーごとに分離して保存します。",
+    "投資判断" to "本アプリの情報は投資助言ではありません。期待値やバックテストは将来の利益を保証しません。",
+    "データ" to "市場データには遅延、欠損、訂正が発生する可能性があります。最終判断は利用者自身で行ってください。",
+)
+
 @Composable
-private fun TutorialScreen(onBack: () -> Unit) {
+private fun OnboardingPrivacyScreen(onContinue: () -> Unit) {
+    var acknowledged by remember { mutableStateOf(false) }
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("ご利用前の確認") })
+        },
+    ) { padding ->
+        LazyColumn(
+            Modifier.padding(padding).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                Text(
+                    "プライバシー・免責事項",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text("StockAIを利用する前に、次の内容をご確認ください。")
+            }
+            items(privacyItems) { (title, body) ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(title, fontWeight = FontWeight.Bold)
+                        Text(body)
+                    }
+                }
+            }
+            item {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { acknowledged = !acknowledged },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = acknowledged,
+                        onCheckedChange = { acknowledged = it },
+                    )
+                    Text(
+                        "内容を確認し、投資判断は自分の責任で行うことに同意します。",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            item {
+                Button(
+                    enabled = acknowledged,
+                    onClick = onContinue,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("同意してチュートリアルへ")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TutorialScreen(
+    onBack: () -> Unit,
+    onComplete: (() -> Unit)? = null,
+) {
     Scaffold(topBar = {
         TopAppBar(
             title = { Text("チュートリアル") },
@@ -653,30 +766,50 @@ private fun TutorialScreen(onBack: () -> Unit) {
             Modifier.padding(padding).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            item { Text("StockAIの基本的な使い方", style = MaterialTheme.typography.headlineSmall) }
             item {
-                Text("1. 設定")
-                Text("ソート条件で候補銘柄の選び方を決め、期待値条件で過去検証に使う条件と保有営業日数を決めます。最後に「設定を保存」を押します。")
+                Text(
+                    "StockAIの基本的な使い方",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text("指定期間内に株価が上がる可能性を、過去データと現在の分析から確認するアプリです。")
             }
             item {
-                Text("2. 前日候補")
-                Text("夕方に全市場から抽出された、翌朝の更新対象銘柄を確認します。ここでは銘柄コードだけを表示します。")
+                Text("1. 条件を設定する", fontWeight = FontWeight.Bold)
+                Text("ソート条件で候補の選び方を決め、期待値条件に「以上・以下」と数値を設定します。買い・売り方向、保有営業日数、期間内上昇または条件到達での評価方法も選べます。最後に「設定を保存」を押します。")
             }
             item {
-                Text("3. 配信結果")
-                Text("翌朝の最新データで条件に一致した銘柄、期待値スコア、分析コメントを確認します。")
+                Text("2. データ更新と候補抽出", fontWeight = FontWeight.Bold)
+                Text("夕方に全市場データを更新して前日候補を作成し、翌朝に最新データで条件判定と配信結果を生成します。取得件数、失敗件数、カバー率は「データ更新状況」で確認できます。")
             }
             item {
-                Text("4. 指定銘柄分析")
-                Text("任意の銘柄コードを入力すると、保存した期待値条件によるバックテストを依頼できます。完了後にチャートとコメントを確認します。")
+                Text("3. 配信カードを見る", fontWeight = FontWeight.Bold)
+                Text("カードには銘柄、スコア、平均リターン、勝率、最大含み損を表示します。スコア70以上はブロンズ、80以上はシルバー、90以上はゴールドです。カードをタップすると詳細を開けます。")
             }
             item {
-                Text("5. 運用")
-                Text("全市場更新、候補作成、朝の更新、監視銘柄などの処理状況を確認します。")
+                Text("4. 分析詳細を確認する", fontWeight = FontWeight.Bold)
+                Text("テクニカル分析では日足・週足・月足のRSIや移動平均線をまとめて確認します。ファンダメンタル分析では業界平均と比べた割安・割高、財務、成長性、配当を確認し、最後に総合コメントを表示します。")
             }
             item {
-                Text("注意")
+                Text("5. バックテストを比較する", fontWeight = FontWeight.Bold)
+                Text("同じ売買条件を個別銘柄、同業種、取得済み全銘柄で検証します。事例数、期間外検証、カバー率、信頼度を併せて確認し、一つの銘柄だけに偏らない判断材料にします。")
+            }
+            item {
+                Text("6. 監視対象と指定銘柄分析", fontWeight = FontWeight.Bold)
+                Text("気になる銘柄はカードから監視対象へ追加できます。任意の銘柄コードを指定して、保存済み条件による分析とバックテストを依頼することもできます。")
+            }
+            item {
+                Text("注意", fontWeight = FontWeight.Bold)
                 Text("期待値やバックテストは過去データによる参考情報であり、将来の利益を保証するものではありません。")
+            }
+            if (onComplete != null) {
+                item {
+                    Button(
+                        onClick = onComplete,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("チュートリアルを完了して始める")
+                    }
+                }
             }
         }
     }
@@ -766,18 +899,14 @@ private fun FaqScreen(onBack: () -> Unit) {
 
 @Composable
 private fun PrivacyScreen(onBack: () -> Unit) {
-    InfoListScreen("プライバシー・免責事項", onBack, listOf(
-        "個人情報" to "認証にはSupabaseを利用します。パスワードはアプリ独自のデータベースへ保存しません。",
-        "設定データ" to "ソート条件、期待値条件、分析依頼はログインユーザーごとに分離して保存します。",
-        "投資判断" to "本アプリの情報は投資助言ではありません。期待値やバックテストは将来の利益を保証しません。",
-        "データ" to "市場データには遅延、欠損、訂正が発生する可能性があります。最終的な判断は利用者自身で行ってください。",
-    ))
+    InfoListScreen("プライバシー・免責事項", onBack, privacyItems)
 }
 
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.19.0",
+        "バージョン" to "StockAI Navigator 0.20.0",
+        "0.20.0" to "配信カードをブロンズ・シルバー・ゴールドのスコア色へ変更。初回ログイン時の免責確認と最新チュートリアルを追加。",
         "0.19.0" to "同じ売買条件を個別銘柄・同業種・取得全銘柄で比較。直近20%の期間外検証、対象銘柄数・事例数・カバー率・データ充足度を追加。",
         "0.18.2" to "Supabase認証期限切れ時にセッションを自動更新。",
         "0.18.1" to "過去事例0件をスコア0.0と誤表示しないよう修正。監視対象から最新のクラウド分析詳細を表示。",
@@ -1143,11 +1272,16 @@ private fun DeliveryResultsScreen(
             }
             items(results) { result ->
                 val isFavorite = result.code in favoriteCodes
+                val rank = resultCardRank(result.expectationScore)
                 ElevatedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 10.dp)
                         .clickable { onSelect(result) },
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = rank?.containerColor
+                            ?: MaterialTheme.colorScheme.surface.copy(alpha = .76f),
+                    ),
                 ) {
                     Column(
                         Modifier.padding(14.dp),
@@ -1168,6 +1302,15 @@ private fun DeliveryResultsScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
+                            }
+                            rank?.let {
+                                Text(
+                                    it.label,
+                                    color = it.accentColor,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Spacer(Modifier.width(4.dp))
                             }
                             TextButton(onClick = { onToggleFavorite(result) }) {
                                 Text(if (isFavorite) "★ 監視中" else "☆ 監視")
@@ -1220,6 +1363,31 @@ private fun DeliveryResultsScreen(
             }
         }
     }
+}
+
+private data class ResultCardRank(
+    val label: String,
+    val containerColor: Color,
+    val accentColor: Color,
+)
+
+private fun resultCardRank(score: Double?): ResultCardRank? = when {
+    score == null || score < 70.0 -> null
+    score >= 90.0 -> ResultCardRank(
+        label = "GOLD",
+        containerColor = Color(0xFFD5A62E).copy(alpha = .36f),
+        accentColor = Color(0xFFFFD86B),
+    )
+    score >= 80.0 -> ResultCardRank(
+        label = "SILVER",
+        containerColor = Color(0xFF94A9B4).copy(alpha = .32f),
+        accentColor = Color(0xFFDCE8ED),
+    )
+    else -> ResultCardRank(
+        label = "BRONZE",
+        containerColor = Color(0xFF9A623A).copy(alpha = .38f),
+        accentColor = Color(0xFFE5A875),
+    )
 }
 
 @Composable
