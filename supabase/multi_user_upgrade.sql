@@ -31,6 +31,10 @@ alter table public.screening_results
 add column if not exists expectation_condition_summary text;
 alter table public.screening_results
 add column if not exists trade_direction text not null default 'long';
+alter table public.screening_results
+add column if not exists profit_10_probability_percent double precision;
+alter table public.screening_results
+add column if not exists profit_20_probability_percent double precision;
 
 grant select, insert, update
 on table public.screening_preferences

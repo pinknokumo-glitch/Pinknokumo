@@ -16,6 +16,8 @@ create table if not exists public.screening_results (
   expectation_evaluation_mode text not null default 'condition_exit',
   target_return_percent double precision not null default 5.0,
   outcome_probability_percent double precision,
+  profit_10_probability_percent double precision,
+  profit_20_probability_percent double precision,
   average_return_percent double precision,
   win_rate_percent double precision,
   max_drawdown_percent double precision,
@@ -52,6 +54,10 @@ alter table public.screening_results
 add column if not exists target_return_percent double precision not null default 5.0;
 alter table public.screening_results
 add column if not exists outcome_probability_percent double precision;
+alter table public.screening_results
+add column if not exists profit_10_probability_percent double precision;
+alter table public.screening_results
+add column if not exists profit_20_probability_percent double precision;
 alter table public.screening_results
 add column if not exists average_return_percent double precision;
 alter table public.screening_results

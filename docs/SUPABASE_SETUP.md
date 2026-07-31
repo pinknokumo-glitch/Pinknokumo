@@ -99,8 +99,12 @@ Preference writes remain restricted by RLS.
    `supabase/pooled_backtest_upgrade.sql` once. It preserves existing rows and adds
    individual, same-industry, full-market, chronological holdout, coverage, and
    data-sufficiency fields.
-12. Insert the initial preference while authenticated, or use the dashboard for the first row.
-13. Register the three server values above as GitHub Actions secrets.
+12. Existing projects upgrading to the bounded outcome evaluation must run
+   `supabase/outcome_probability_upgrade.sql` once. It is rerunnable and adds the
+   probabilities of reaching 10% and 20% unrealized profit within the configured
+   maximum number of business days.
+13. Insert the initial preference while authenticated, or use the dashboard for the first row.
+14. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
 # Long-horizon expectation backtests

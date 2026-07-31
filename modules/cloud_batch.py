@@ -211,7 +211,7 @@ def run_cloud_batch(
                         "expectation_condition_summary"
                     ],
                     trade_direction=members[0].trade_direction,
-                    evaluation_mode=members[0].expectation_evaluation_mode,
+                    evaluation_mode=outcome["effective_evaluation_mode"],
                     target_return_percent=members[0].target_return_percent,
                 )
                 publisher.publish_run(
@@ -224,7 +224,7 @@ def run_cloud_batch(
                         "expectation_condition_summary"
                     ],
                     trade_direction=members[0].trade_direction,
-                    evaluation_mode=members[0].expectation_evaluation_mode,
+                    evaluation_mode=outcome["effective_evaluation_mode"],
                     target_return_percent=members[0].target_return_percent,
                     relaxation_label=outcome["relaxation_label"],
                     relaxation_counts=outcome["relaxation_counts"],
@@ -243,7 +243,7 @@ def run_cloud_batch(
             "hit_count": len(outcome["hits"]),
             "profile": outcome["profile"],
             "trade_direction": members[0].trade_direction,
-            "evaluation_mode": members[0].expectation_evaluation_mode,
+            "evaluation_mode": outcome["effective_evaluation_mode"],
             "target_return_percent": members[0].target_return_percent,
             "relaxation_label": outcome["relaxation_label"],
             "relaxation_counts": outcome["relaxation_counts"],
@@ -297,6 +297,12 @@ def _compute_group(
         preference, options, screening_config
     )
     expectation_rule = expectation_config["profiles"][expectation_profile]
+    configured_evaluation_mode = preference.expectation_evaluation_mode
+    effective_evaluation_mode = configured_evaluation_mode
+    if configured_evaluation_mode in {"condition_exit", "period_end"}:
+        effective_evaluation_mode = (
+            "condition_exit" if expectation_rule else "period_end"
+        )
     hits: list[dict[str, object]] = []
     effective_rule = base_rule
     effective_profile = f"cloud_{signature}"
@@ -376,7 +382,7 @@ def _compute_group(
                 codes=missing_codes,
                 exit_rule=expectation_rule,
                 position_side=preference.trade_direction,
-                evaluation_mode=preference.expectation_evaluation_mode,
+                evaluation_mode=effective_evaluation_mode,
                 target_return_percent=preference.target_return_percent,
             )
         universe_codes = list(dict.fromkeys(
@@ -413,7 +419,7 @@ def _compute_group(
                 codes=pooled_missing,
                 exit_rule=expectation_rule,
                 position_side=preference.trade_direction,
-                evaluation_mode=preference.expectation_evaluation_mode,
+                evaluation_mode=effective_evaluation_mode,
                 target_return_percent=preference.target_return_percent,
             )
         with database.connect() as connection:
@@ -445,10 +451,17 @@ def _compute_group(
                     hit["max_drawdown_percent"] = summary.get(
                         "max_drawdown_percent"
                     )
+                    hit["profit_10_probability_percent"] = summary.get(
+                        "profit_10_probability_percent"
+                    )
+                    hit["profit_20_probability_percent"] = summary.get(
+                        "profit_20_probability_percent"
+                    )
                     hit.update(_estimated_price_fields(
                         hit.get("daily.close"),
                         summary,
                         preference.trade_direction,
+                        effective_evaluation_mode,
                     ))
                 backtest_comment = None
                 if result:
@@ -462,7 +475,7 @@ def _compute_group(
                             expectation,
                             holding_days=preference.holding_days,
                             position_side=preference.trade_direction,
-                            evaluation_mode=preference.expectation_evaluation_mode,
+                            evaluation_mode=effective_evaluation_mode,
                             target_return_percent=preference.target_return_percent,
                         )
                 comments[code] = AnalysisCommentary.integrated_comment(
@@ -498,6 +511,7 @@ def _compute_group(
         "expectation_condition_summary": json.dumps(
             expectation_rule, ensure_ascii=False, sort_keys=True
         ),
+        "effective_evaluation_mode": effective_evaluation_mode,
         "relaxation_label": relaxation_label,
         "relaxation_counts": relaxation_counts,
         "backtest_requested_count": backtest_requested_count,
@@ -539,7 +553,10 @@ def _codes_requiring_backtest(
     for row in rows:
         result = json.loads(row[1])
         summary = result.get("summary", {})
-        if "conditional_median_return_percent" in summary:
+        if (
+            "conditional_median_return_percent" in summary
+            and "profit_20_probability_percent" in summary
+        ):
             cached.add(str(row[0]))
     return [str(code) for code in codes if str(code) not in cached]
 
@@ -569,7 +586,10 @@ def _codes_without_current_summary(
             if str(row["code"]) in cached:
                 continue
             summary = json.loads(row["result_json"]).get("summary", {})
-            if "out_of_sample_trade_count" in summary:
+            if (
+                "out_of_sample_trade_count" in summary
+                and "profit_20_probability_percent" in summary
+            ):
                 cached.add(str(row["code"]))
     return [str(code) for code in codes if str(code) not in cached]
 
@@ -578,8 +598,9 @@ def _estimated_price_fields(
     reference_price: object,
     summary: Mapping[str, object],
     position_side: str,
+    evaluation_mode: str = "condition_exit",
 ) -> dict[str, float | int | None]:
-    """Convert reached-outcome return distribution into a reference price range."""
+    """Convert the applicable return distribution into a reference price range."""
     try:
         reference = float(reference_price)
     except (TypeError, ValueError):
@@ -587,13 +608,22 @@ def _estimated_price_fields(
     if not math.isfinite(reference) or reference <= 0:
         reference = None
 
-    sample_count = int(summary.get("target_reached_count") or 0)
-    median_days = _finite_float(summary.get("median_sessions_to_outcome"))
-    returns = [
-        _finite_float(summary.get("conditional_median_return_percent")),
-        _finite_float(summary.get("conditional_return_p25_percent")),
-        _finite_float(summary.get("conditional_return_p75_percent")),
-    ]
+    if evaluation_mode == "period_end":
+        sample_count = int(summary.get("trade_count") or 0)
+        median_days = _finite_float(summary.get("median_sessions_held"))
+        returns = [
+            _finite_float(summary.get("median_return_percent")),
+            _finite_float(summary.get("return_p25_percent")),
+            _finite_float(summary.get("return_p75_percent")),
+        ]
+    else:
+        sample_count = int(summary.get("target_reached_count") or 0)
+        median_days = _finite_float(summary.get("median_sessions_to_outcome"))
+        returns = [
+            _finite_float(summary.get("conditional_median_return_percent")),
+            _finite_float(summary.get("conditional_return_p25_percent")),
+            _finite_float(summary.get("conditional_return_p75_percent")),
+        ]
     if reference is None or sample_count <= 0 or any(value is None for value in returns):
         return {
             "reference_price": reference,

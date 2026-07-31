@@ -24,6 +24,8 @@ class Trade:
     exit_reason: str = "holding_period"
     target_reached: bool = False
     sessions_held: int = 0
+    profit_10_reached: bool = False
+    profit_20_reached: bool = False
 
 class Backtester:
     def __init__(self, indicator_config: Mapping[str, object], backtest_config: Mapping[str, object]) -> None:
@@ -49,8 +51,12 @@ class Backtester:
             "condition_exit", "period_end", "within_period_up", "target_return"
         }:
             raise ValueError("evaluation_mode is invalid")
-        if evaluation_mode == "condition_exit" and exit_rule is None:
-            evaluation_mode = "period_end"
+        # holding_days is the maximum observation window.  When an explicit
+        # outcome rule exists, reaching it inside that window takes priority
+        # over a period-end settlement.  Period-end is only the fallback when
+        # no other outcome condition was configured.
+        if evaluation_mode in {"condition_exit", "period_end"}:
+            evaluation_mode = "condition_exit" if exit_rule else "period_end"
         if target_return_percent <= 0 or target_return_percent > 100:
             raise ValueError(
                 "target_return_percent must be greater than 0 and at most 100"
@@ -65,7 +71,8 @@ class Backtester:
             if not self.rules.evaluate(rule, values).matched:
                 continue
             entry_index = signal_index + 1
-            exit_index = entry_index + holding_days
+            maximum_exit_index = entry_index + holding_days
+            exit_index = maximum_exit_index
             exit_price_field = "close"
             exit_reason = "holding_period"
             target_reached = False
@@ -83,6 +90,17 @@ class Backtester:
             entry_price = float(entry["open"])
             if entry_price <= 0:
                 continue
+            maximum_path = computed.iloc[entry_index : maximum_exit_index + 1]
+            if position_side == "long":
+                maximum_favorable_return = (
+                    float(maximum_path["high"].max()) / entry_price - 1
+                ) * 100
+            else:
+                maximum_favorable_return = (
+                    entry_price - float(maximum_path["low"].min())
+                ) / entry_price * 100
+            profit_10_reached = maximum_favorable_return >= 10.0
+            profit_20_reached = maximum_favorable_return >= 20.0
             if evaluation_mode == "within_period_up":
                 for candidate_index in range(entry_index, exit_index + 1):
                     candidate_close = float(computed.iloc[candidate_index]["close"])
@@ -148,6 +166,8 @@ class Backtester:
                 exit_reason=exit_reason,
                 target_reached=target_reached,
                 sessions_held=exit_index - entry_index + 1,
+                profit_10_reached=profit_10_reached,
+                profit_20_reached=profit_20_reached,
             ))
         return trades
 
@@ -207,10 +227,14 @@ class Backtester:
                 "win_rate_percent": None, "outcome_probability_percent": None,
                 "median_return_percent": None, "max_drawdown_percent": None,
                 "average_mfe_percent": None, "target_reached_count": 0,
+                "return_p25_percent": None, "return_p75_percent": None,
+                "median_sessions_held": None,
                 "conditional_median_return_percent": None,
                 "conditional_return_p25_percent": None,
                 "conditional_return_p75_percent": None,
                 "median_sessions_to_outcome": None,
+                "profit_10_probability_percent": None,
+                "profit_20_probability_percent": None,
                 "out_of_sample_trade_count": 0,
                 "out_of_sample_average_return_percent": None,
                 "out_of_sample_win_rate_percent": None,
@@ -227,6 +251,9 @@ class Backtester:
             "trade_count": len(frame),
             "average_return_percent": float(frame["return_percent"].mean()),
             "median_return_percent": float(frame["return_percent"].median()),
+            "return_p25_percent": float(frame["return_percent"].quantile(0.25)),
+            "return_p75_percent": float(frame["return_percent"].quantile(0.75)),
+            "median_sessions_held": float(frame["sessions_held"].median()),
             "win_rate_percent": float((frame["return_percent"] > 0).mean() * 100),
             "outcome_probability_percent": float(frame["target_reached"].mean() * 100),
             "max_drawdown_percent": float(frame["max_drawdown_percent"].min()),
@@ -243,6 +270,12 @@ class Backtester:
             ),
             "median_sessions_to_outcome": (
                 float(reached["sessions_held"].median()) if not reached.empty else None
+            ),
+            "profit_10_probability_percent": float(
+                frame["profit_10_reached"].mean() * 100
+            ),
+            "profit_20_probability_percent": float(
+                frame["profit_20_reached"].mean() * 100
             ),
             # Chronological holdout: the newest 20% of trades are kept separate
             # from the earlier observations. This is not a promise of future
