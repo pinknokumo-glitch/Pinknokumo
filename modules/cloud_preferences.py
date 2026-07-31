@@ -114,7 +114,11 @@ class CloudPreferenceClient:
                 raise ValueError("cloud expectation_genre_id is unavailable")
             expectation_conditions = []
         elif expectation_mode == "manual":
-            options.manual_rule(expectation_conditions, expectation_logic)
+            # An empty manual expectation is a valid "holding period only"
+            # configuration. Entry screening still requires at least one
+            # condition, but an outcome condition is optional.
+            if expectation_conditions:
+                options.manual_rule(expectation_conditions, expectation_logic)
             expectation_genre_id = None
         else:
             raise ValueError("cloud expectation_mode is invalid")
@@ -128,6 +132,12 @@ class CloudPreferenceClient:
             "condition_exit", "period_end", "within_period_up", "target_return"
         }:
             raise ValueError("cloud expectation_evaluation_mode is invalid")
+        if (
+            expectation_mode == "manual"
+            and not expectation_conditions
+            and evaluation_mode in {"condition_exit", "period_end"}
+        ):
+            evaluation_mode = "period_end"
         target_return_percent = float(raw.get("target_return_percent") or 5.0)
         if target_return_percent <= 0 or target_return_percent > 100:
             raise ValueError(
@@ -208,16 +218,25 @@ def apply_expectation_preference(
     options: ScreeningOptions,
     screening_config: Mapping[str, object],
 ) -> tuple[dict[str, object], str]:
+    expectation_conditions = (
+        preference.expectation_manual_conditions
+        if preference.expectation_manual_conditions is not None
+        else preference.manual_conditions
+    )
+    if (preference.expectation_mode or preference.mode) == "manual" and not expectation_conditions:
+        config = dict(screening_config)
+        profiles = dict(config.get("profiles") or {})
+        profile = "cloud_expectation_none"
+        profiles[profile] = {}
+        config["profiles"] = profiles
+        config["active_profile"] = profile
+        return config, profile
     expectation = ScreeningPreference(
         user_id=preference.user_id,
         mode=preference.expectation_mode or preference.mode,
         genre_id=preference.expectation_genre_id or preference.genre_id,
         manual_logic=preference.expectation_manual_logic,
-        manual_conditions=(
-            preference.expectation_manual_conditions
-            if preference.expectation_manual_conditions is not None
-            else preference.manual_conditions
-        ),
+        manual_conditions=expectation_conditions,
         holding_days=preference.holding_days,
         trade_direction=preference.trade_direction,
         expectation_evaluation_mode=preference.expectation_evaluation_mode,

@@ -237,6 +237,9 @@ class SupabaseClient(
     fun savePreference(session: SupabaseSession, preference: CloudPreference) {
         require(preference.mode in setOf("auto", "manual")) { "保存モードが不正です" }
         require(preference.mode != "auto" || !preference.genreId.isNullOrBlank()) { "ジャンルを選択してください" }
+        require(preference.mode != "manual" || preference.manualConditions.isNotEmpty()) {
+            "マニュアルのソート条件を1件以上入力してください"
+        }
         require(preference.manualConditions.size <= 32) { "ソート条件は32件までです" }
         require(preference.expectationManualConditions.size <= 32) { "期待値条件は32件までです" }
         require(preference.holdingDays in 1..1000) { "検証期間は1～1000営業日で入力してください" }
