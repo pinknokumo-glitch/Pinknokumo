@@ -905,7 +905,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.21.0",
+        "バージョン" to "StockAI Navigator 0.21.1",
+        "0.21.1" to "期待値条件なしを正式に許可し、指定営業日の期間最終日決済として処理。入口の手動条件なしは保存時に検知。",
         "0.21.0" to "営業日数を最大監視期間として扱い、期間内の条件初回達成で決済。条件なしは期間最終日決済とし、10%・20%含み益確率を追加。",
         "0.20.0" to "配信カードをブロンズ・シルバー・ゴールドのスコア色へ変更。初回ログイン時の免責確認と最新チュートリアルを追加。",
         "0.19.0" to "同じ売買条件を個別銘柄・同業種・取得全銘柄で比較。直近20%の期間外検証、対象銘柄数・事例数・カバー率・データ充足度を追加。",
@@ -1981,6 +1982,12 @@ private fun ScreeningScreen(
         require(resolvedTarget > 0.0 && resolvedTarget <= 100.0) {
             "目標騰落率は0より大きく100以下で入力してください"
         }
+        val resolvedEvaluationMode = when {
+            expectationMode == "manual" && expectationConditions.isEmpty() &&
+                evaluationMode in setOf("condition_exit", "period_end") -> "period_end"
+            evaluationMode == "period_end" -> "condition_exit"
+            else -> evaluationMode
+        }
         return CloudPreference(
             mode = mode,
             genreId = genreId,
@@ -1993,7 +2000,7 @@ private fun ScreeningScreen(
             expectationManualConditions =
                 if (expectationMode == "manual") expectationConditions else emptyList(),
             tradeDirection = tradeDirection,
-            evaluationMode = evaluationMode,
+            evaluationMode = resolvedEvaluationMode,
             targetReturnPercent = resolvedTarget,
         )
     }
@@ -2131,10 +2138,13 @@ private fun ScreeningScreen(
                         expectationManualOperators[it.field] = it.operator
                     }
                     tradeDirection = saved.tradeDirection
-                    evaluationMode = if (saved.evaluationMode == "period_end") {
-                        "condition_exit"
-                    } else {
-                        saved.evaluationMode
+                    evaluationMode = when {
+                        saved.expectationMode == "manual" &&
+                            saved.expectationManualConditions.isEmpty() &&
+                            saved.evaluationMode in setOf("condition_exit", "period_end") ->
+                            "period_end"
+                        saved.evaluationMode == "period_end" -> "condition_exit"
+                        else -> saved.evaluationMode
                     }
                     targetReturnPercent = saved.targetReturnPercent.toString()
                 }

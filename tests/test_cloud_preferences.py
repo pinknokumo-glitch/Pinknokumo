@@ -205,6 +205,46 @@ class CloudPreferenceTestCase(unittest.TestCase):
             10,
         )
 
+    def test_empty_manual_expectation_means_period_end_settlement(self) -> None:
+        preference = CloudPreferenceClient.validate({
+            "mode": "auto",
+            "genre_id": "value",
+            "expectation_mode": "manual",
+            "expectation_manual_conditions": [],
+            "expectation_evaluation_mode": "condition_exit",
+        }, self.options)
+
+        self.assertEqual(preference.expectation_evaluation_mode, "period_end")
+        resolved, profile = apply_expectation_preference(
+            preference,
+            self.options,
+            {"active_profile": "value", "profiles": {
+                "value": {"field": "fundamental.per", "operator": "<=", "value": 15}
+            }},
+        )
+        self.assertEqual(profile, "cloud_expectation_none")
+        self.assertEqual(resolved["profiles"][profile], {})
+
+    def test_empty_manual_entry_conditions_remain_invalid(self) -> None:
+        with self.assertRaisesRegex(ValueError, "manual conditions"):
+            CloudPreferenceClient.validate({
+                "mode": "manual",
+                "manual_conditions": [],
+                "expectation_mode": "manual",
+                "expectation_manual_conditions": [],
+            }, self.options)
+
+    def test_target_return_does_not_require_an_expectation_rule(self) -> None:
+        preference = CloudPreferenceClient.validate({
+            "mode": "auto",
+            "genre_id": "value",
+            "expectation_mode": "manual",
+            "expectation_manual_conditions": [],
+            "expectation_evaluation_mode": "target_return",
+            "target_return_percent": 10,
+        }, self.options)
+        self.assertEqual(preference.expectation_evaluation_mode, "target_return")
+
     def test_fetch_all_skips_invalid_user_without_blocking_valid_users(self) -> None:
         payload = [
             {
