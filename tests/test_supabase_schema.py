@@ -119,6 +119,18 @@ class SupabaseSchemaTests(unittest.TestCase):
         self.assertNotIn("delete from", sql)
         self.assertNotIn("drop table", sql)
 
+    def test_outcome_probability_upgrade_is_rerunnable(self) -> None:
+        sql = compact_sql("outcome_probability_upgrade.sql")
+        expected = (
+            "add column if not exists profit_10_probability_percent double precision;",
+            "add column if not exists profit_20_probability_percent double precision;",
+        )
+        for statement in expected:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, sql)
+        self.assertNotIn("delete from", sql)
+        self.assertNotIn("drop table", sql)
+
     def test_screening_result_summary_upgrade_is_rerunnable(self) -> None:
         sql = compact_sql("screening_result_summary_upgrade.sql")
         expected = (

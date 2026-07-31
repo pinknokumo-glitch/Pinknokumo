@@ -53,6 +53,12 @@ class CloudResultPublisher:
                 "outcome_probability_percent": self._finite_number(
                     hit.get("outcome_probability_percent")
                 ),
+                "profit_10_probability_percent": self._finite_number(
+                    hit.get("profit_10_probability_percent")
+                ),
+                "profit_20_probability_percent": self._finite_number(
+                    hit.get("profit_20_probability_percent")
+                ),
                 "average_return_percent": self._finite_number(
                     hit.get("average_return_percent")
                 ),

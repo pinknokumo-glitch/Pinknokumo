@@ -74,7 +74,11 @@ class CloudBatchTests(unittest.TestCase):
             database.initialize()
             database.save_analysis_snapshot(
                 "7203", "2026-07-24", "cloud_signature_0", "backtest",
-                {"summary": {"conditional_median_return_percent": 5.0}},
+                {"summary": {
+                    "conditional_median_return_percent": 5.0,
+                    "out_of_sample_trade_count": 2,
+                    "profit_20_probability_percent": 15.0,
+                }},
             )
             missing = _codes_requiring_backtest(
                 database,
@@ -118,6 +122,23 @@ class CloudBatchTests(unittest.TestCase):
         self.assertEqual(short_result["estimated_price_high"], 950.0)
         self.assertEqual(long_result["estimate_sample_count"], 40)
         self.assertEqual(long_result["median_days_to_outcome"], 12.0)
+
+    def test_period_end_price_estimate_uses_all_settled_trades(self) -> None:
+        summary = {
+            "trade_count": 50,
+            "median_return_percent": 4.0,
+            "return_p25_percent": -3.0,
+            "return_p75_percent": 12.0,
+            "median_sessions_held": 250.0,
+            "target_reached_count": 0,
+        }
+        result = _estimated_price_fields(1000, summary, "long", "period_end")
+
+        self.assertEqual(result["estimated_price_median"], 1040.0)
+        self.assertEqual(result["estimated_price_low"], 970.0)
+        self.assertEqual(result["estimated_price_high"], 1120.0)
+        self.assertEqual(result["estimate_sample_count"], 50)
+        self.assertEqual(result["median_days_to_outcome"], 250.0)
 
     def test_previous_day_backtest_is_not_reused(self) -> None:
         with TemporaryDirectory() as directory:

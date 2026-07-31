@@ -905,7 +905,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.20.0",
+        "バージョン" to "StockAI Navigator 0.21.0",
+        "0.21.0" to "営業日数を最大監視期間として扱い、期間内の条件初回達成で決済。条件なしは期間最終日決済とし、10%・20%含み益確率を追加。",
         "0.20.0" to "配信カードをブロンズ・シルバー・ゴールドのスコア色へ変更。初回ログイン時の免責確認と最新チュートリアルを追加。",
         "0.19.0" to "同じ売買条件を個別銘柄・同業種・取得全銘柄で比較。直近20%の期間外検証、対象銘柄数・事例数・カバー率・データ充足度を追加。",
         "0.18.2" to "Supabase認証期限切れ時にセッションを自動更新。",
@@ -1548,6 +1549,50 @@ private fun CloudResultDetailScreen(
                     }
                 }
             }
+            item {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Text("期間内の達成確率", style = MaterialTheme.typography.titleMedium)
+                        when (result.evaluationMode) {
+                            "condition_exit" -> Text(
+                                "指定条件の達成確率 " +
+                                    result.outcomeProbabilityPercent.percentValue()
+                            )
+                            "period_end" -> Text(
+                                "期間最終日の値上がり確率 " +
+                                    result.winRatePercent.percentValue()
+                            )
+                            "target_return" -> Text(
+                                "設定した${String.format("%.1f", result.targetReturnPercent)}%含み益の達成確率 " +
+                                    result.outcomeProbabilityPercent.percentValue()
+                            )
+                            else -> Text(
+                                "値上がり・値下がり条件の達成確率 " +
+                                    result.outcomeProbabilityPercent.percentValue()
+                            )
+                        }
+                        if (result.evaluationMode != "period_end") {
+                            Text(
+                                "10%以上の含み益となる確率 " +
+                                    result.profit10ProbabilityPercent.percentValue()
+                            )
+                            Text(
+                                "20%以上の含み益となる確率 " +
+                                    result.profit20ProbabilityPercent.percentValue()
+                            )
+                        }
+                        Text(
+                            "営業日数は決済日ではなく、条件を監視する最大期間です。" +
+                                "条件未達の場合だけ期間最終日に決済します。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             result.referencePrice?.let { price ->
                 item {
                     ElevatedCard(Modifier.fillMaxWidth()) {
@@ -1558,7 +1603,13 @@ private fun CloudResultDetailScreen(
                             Text("価格シミュレーション", style = MaterialTheme.typography.titleMedium)
                             Text("配信時価格 ${String.format("%,.2f円", price)}")
                             result.estimatedPriceMedian?.let {
-                                Text("条件達成時の参考価格中央値 ${String.format("%,.2f円", it)}")
+                                Text(
+                                    (if (result.evaluationMode == "period_end") {
+                                        "期間最終日の参考価格中央値 "
+                                    } else {
+                                        "条件達成時の参考価格中央値 "
+                                    }) + String.format("%,.2f円", it)
+                                )
                             }
                             if (
                                 result.estimatedPriceLow != null &&
@@ -1610,8 +1661,10 @@ private fun CloudResultDetailScreen(
                         result.conditionSummary?.let {
                             Text("買い・入口: ${formatConditionSummary(it)}")
                         }
-                        result.expectationConditionSummary?.let {
-                            Text("売却・達成: ${formatConditionSummary(it)}")
+                        if (result.evaluationMode == "condition_exit") {
+                            result.expectationConditionSummary?.let {
+                                Text("売却・達成: ${formatConditionSummary(it)}")
+                            }
                         }
                     }
                 }
@@ -2078,7 +2131,11 @@ private fun ScreeningScreen(
                         expectationManualOperators[it.field] = it.operator
                     }
                     tradeDirection = saved.tradeDirection
-                    evaluationMode = saved.evaluationMode
+                    evaluationMode = if (saved.evaluationMode == "period_end") {
+                        "condition_exit"
+                    } else {
+                        saved.evaluationMode
+                    }
                     targetReturnPercent = saved.targetReturnPercent.toString()
                 }
             }
@@ -2281,10 +2338,10 @@ private fun ScreeningScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text("期待値の判定方式", style = MaterialTheme.typography.titleMedium)
-                    FilterChip(
-                        selected = evaluationMode == "period_end",
-                        onClick = { evaluationMode = "period_end" },
-                        label = { Text("期間終了時に値上がり／値下がり") },
+                    Text(
+                        "営業日数は条件を監視する最大期間です。条件が設定されている場合は" +
+                            "期間内の初回達成時に決済し、条件がない場合だけ期間最終日に決済します。",
+                        style = MaterialTheme.typography.bodySmall,
                     )
                     FilterChip(
                         selected = evaluationMode == "within_period_up",
@@ -3158,10 +3215,10 @@ private fun tradeDirectionLabel(direction: String): String =
 
 private fun evaluationModeLabel(mode: String, targetReturnPercent: Double): String =
     when (mode) {
-        "period_end" -> "期間終了時の値上がり／値下がり"
-        "within_period_up" -> "期間内に配信価格を上回る／下回る"
-        "target_return" -> "目標騰落率${String.format("%.1f", targetReturnPercent)}%到達"
-        else -> "期待値条件への到達"
+        "period_end" -> "他条件なし：期間最終日に決済"
+        "within_period_up" -> "最大期間内に配信価格を上回る／下回る"
+        "target_return" -> "最大期間内に目標騰落率${String.format("%.1f", targetReturnPercent)}%到達"
+        else -> "最大期間内に期待値条件を達成した時点で決済"
     }
 
 private fun readableIndicatorName(field: String): String {
