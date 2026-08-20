@@ -3,12 +3,17 @@ indicators:
     enabled: true
     method: wilder
     period: 14
+    periods: [9, 14]
     timeframes: [daily, weekly, monthly]
   macd:
     enabled: true
     fast: 12
     slow: 26
     signal: 9
+    presets:
+      - {label: short, fast: 5, slow: 25, signal: 9}
+      - {label: standard, fast: 12, slow: 26, signal: 9}
+      - {label: long, fast: 25, slow: 75, signal: 14}
     timeframes: [daily, weekly, monthly]
   moving_average:
     enabled: true
@@ -22,10 +27,12 @@ indicators:
     enabled: true
     k_period: 14
     d_period: 3
+    presets:
+      - {label: short, k_period: 9, d_period: 3}
+      - {label: standard, k_period: 14, d_period: 3}
   adx:
     enabled: true
     period: 14
   atr:
     enabled: true
     period: 14
-

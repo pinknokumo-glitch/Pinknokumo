@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+
+import yaml
 
 from modules.screening_options import ScreeningOptions
 
@@ -23,6 +26,33 @@ class ScreeningOptionsTestCase(unittest.TestCase):
             self.options.manual_rule([{"field": "fundamental.per", "operator": "<=", "value": 999}])
         with self.assertRaises(ValueError):
             self.options.manual_rule([{"field": "os.system", "operator": "<=", "value": 1}])
+
+    def test_period_presets_are_available_for_every_timeframe(self) -> None:
+        with Path("config/screening_options.yaml").open(encoding="utf-8") as file:
+            options_config = yaml.safe_load(file)
+        with Path("config/screening.yaml").open(encoding="utf-8") as file:
+            screening_config = yaml.safe_load(file)
+        options = ScreeningOptions(options_config, screening_config)
+        fields = {
+            item["field"] for item in options.catalog()["manual_fields"]
+        }
+        for timeframe in ("daily", "weekly", "monthly"):
+            self.assertIn(f"{timeframe}.rsi_9", fields)
+            self.assertIn(f"{timeframe}.rsi_14", fields)
+            self.assertIn(f"{timeframe}.macd_5_25_9", fields)
+            self.assertIn(f"{timeframe}.macd", fields)
+            self.assertIn(f"{timeframe}.macd_25_75_14", fields)
+            self.assertIn(f"{timeframe}.stoch_k_9_3", fields)
+            self.assertIn(f"{timeframe}.stoch_k", fields)
+            for period in (5, 25, 75, 200):
+                self.assertIn(
+                    f"{timeframe}.price_vs_sma_{period}_percent", fields,
+                )
+        rule = options.manual_rule([
+            {"field": "daily.rsi_9", "operator": "<=", "value": 30},
+            {"field": "weekly.macd_25_75_14", "operator": ">=", "value": 0},
+        ])
+        self.assertEqual(len(rule["all"]), 2)
 
 
 if __name__ == "__main__":
