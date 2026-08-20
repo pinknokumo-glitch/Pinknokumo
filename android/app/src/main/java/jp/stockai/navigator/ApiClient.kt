@@ -86,6 +86,81 @@ data class StockOverview(
 )
 data class RelativePerformance(val sessions: Int, val excessReturnPercent: Double)
 
+private fun builtInTechnicalManualFields(): List<ManualField> = buildList {
+    for ((prefix, timeframe) in listOf(
+        "daily" to "日足", "weekly" to "週足", "monthly" to "月足",
+    )) {
+        add(ManualField("$prefix.rsi_9", "${timeframe}RSI（短期・9本）", 0.0, 100.0, "<="))
+        add(ManualField("$prefix.rsi_14", "${timeframe}RSI（標準・14本）", 0.0, 100.0, "<="))
+        for ((fieldSuffix, periodLabel) in listOf(
+            "macd_5_25_9" to "短期・5/25/9本",
+            "macd" to "標準・12/26/9本",
+            "macd_25_75_14" to "長期・25/75/14本",
+        )) {
+            add(ManualField(
+                "$prefix.$fieldSuffix", "${timeframe}MACD（$periodLabel）",
+                -100000.0, 100000.0, ">=",
+            ))
+        }
+        for ((fieldSuffix, periodLabel) in listOf(
+            "macd_histogram_5_25_9" to "短期・5/25/9本",
+            "macd_histogram" to "標準・12/26/9本",
+            "macd_histogram_25_75_14" to "長期・25/75/14本",
+        )) {
+            add(ManualField(
+                "$prefix.$fieldSuffix", "${timeframe}MACDヒストグラム（$periodLabel）",
+                -100000.0, 100000.0, ">=",
+            ))
+        }
+        for ((suffix, periodLabel) in listOf("9_3" to "短期・9/3本", "" to "標準・14/3本")) {
+            val separator = if (suffix.isBlank()) "" else "_$suffix"
+            add(ManualField(
+                "$prefix.stoch_k$separator", "${timeframe}ストキャスティクス%K（$periodLabel）",
+                0.0, 100.0, "<=",
+            ))
+            add(ManualField(
+                "$prefix.stoch_d$separator", "${timeframe}ストキャスティクス%D（$periodLabel）",
+                0.0, 100.0, "<=",
+            ))
+        }
+        add(ManualField("$prefix.adx_14", "${timeframe}ADX", 0.0, 100.0, ">="))
+        add(ManualField("$prefix.bb_percent_b", "${timeframe}ボリンジャー%B", -100.0, 200.0, "<="))
+        add(ManualField("$prefix.atr_14_percent", "${timeframe}ATR比率", 0.0, 100.0, "<="))
+        for ((period, horizon) in listOf(5 to "短期", 25 to "中期", 75 to "長期", 200 to "超長期")) {
+            add(ManualField(
+                "$prefix.price_vs_sma_${period}_percent",
+                "${timeframe}${period}本移動平均乖離率（$horizon）",
+                -100.0, 500.0, ">=",
+            ))
+        }
+        val returnFields = when (prefix) {
+            "daily" -> listOf(
+                Triple(5, "5日", 500.0),
+                Triple(20, "20日", 500.0),
+                Triple(60, "60日", 1000.0),
+            )
+            "weekly" -> listOf(
+                Triple(20, "週足20本", 1000.0),
+                Triple(60, "週足60本", 5000.0),
+            )
+            else -> listOf(
+                Triple(20, "月足20本", 10000.0),
+                Triple(60, "月足60本", 100000.0),
+            )
+        }
+        for ((period, labelPrefix, maximum) in returnFields) {
+            add(ManualField(
+                "$prefix.return_${period}_percent", "${labelPrefix}騰落率",
+                -100.0, maximum, ">=",
+            ))
+        }
+        add(ManualField(
+            "$prefix.volume_ratio_20", "${timeframe}20本平均出来高比",
+            0.0, 10000.0, ">=",
+        ))
+    }
+}
+
 fun builtInScreeningOptions(): ScreeningOptions = ScreeningOptions(
     genres = listOf(
         ScreeningGenre("value", "割安株", "PER・PBR・財務健全性を重視します。", "value", "baseline"),
@@ -95,21 +170,7 @@ fun builtInScreeningOptions(): ScreeningOptions = ScreeningOptions(
         ScreeningGenre("rebound", "反発候補", "RSIの改善を重視します。", "rsi_rebound", "baseline"),
         ScreeningGenre("adjustment", "調整局面", "日・週・月のRSIが低い銘柄を探します。", "oversold", "needs_validation"),
     ),
-    manualFields = buildList {
-        addAll(listOf(
-        ManualField("daily.rsi_14", "日足RSI", 0.0, 100.0, "<="),
-        ManualField("weekly.rsi_14", "週足RSI", 0.0, 100.0, "<="),
-        ManualField("monthly.rsi_14", "月足RSI", 0.0, 100.0, "<="),
-        ManualField("daily.macd", "日足MACD", -100000.0, 100000.0, ">="),
-        ManualField("daily.macd_histogram", "MACDヒストグラム", -100000.0, 100000.0, ">="),
-        ManualField("daily.stoch_k", "ストキャスティクス%K", 0.0, 100.0, "<="),
-        ManualField("daily.adx_14", "日足ADX", 0.0, 100.0, ">="),
-        ManualField("daily.bb_percent_b", "ボリンジャー%B", -100.0, 200.0, "<="),
-        ManualField("daily.atr_14_percent", "ATR比率", 0.0, 100.0, "<="),
-        ManualField("daily.price_vs_sma_25_percent", "25日移動平均乖離率", -100.0, 500.0, ">="),
-        ManualField("daily.price_vs_sma_75_percent", "75日移動平均乖離率", -100.0, 500.0, ">="),
-        ManualField("daily.return_20_percent", "20日騰落率", -100.0, 500.0, ">="),
-        ManualField("daily.volume_ratio_20", "20日平均出来高比", 0.0, 10000.0, ">="),
+    manualFields = builtInTechnicalManualFields() + listOf(
         ManualField("fundamental.per", "PER", -1000.0, 2000.0, "<=", "fundamental"),
         ManualField("fundamental.pbr", "PBR", -100.0, 200.0, "<=", "fundamental"),
         ManualField("fundamental.roe", "ROE", -1000.0, 1000.0, ">=", "fundamental"),
@@ -118,22 +179,7 @@ fun builtInScreeningOptions(): ScreeningOptions = ScreeningOptions(
         ManualField("fundamental.equity_ratio", "自己資本比率", -100.0, 100.0, ">=", "fundamental"),
         ManualField("fundamental.dividend_yield", "配当利回り", 0.0, 100.0, ">=", "fundamental"),
         ManualField("fundamental.operating_cash_flow", "営業CF", -1e14, 1e14, ">=", "fundamental"),
-        ))
-        for ((prefix, label) in listOf("weekly" to "週足", "monthly" to "月足")) {
-            add(ManualField("$prefix.macd", "${label}MACD", -100000.0, 100000.0, ">="))
-            add(ManualField("$prefix.macd_histogram", "${label}MACDヒストグラム", -100000.0, 100000.0, ">="))
-            add(ManualField("$prefix.stoch_k", "${label}ストキャスティクス%K", 0.0, 100.0, "<="))
-            add(ManualField("$prefix.stoch_d", "${label}ストキャスティクス%D", 0.0, 100.0, "<="))
-            add(ManualField("$prefix.adx_14", "${label}ADX", 0.0, 100.0, ">="))
-            add(ManualField("$prefix.bb_percent_b", "${label}ボリンジャー%B", -100.0, 200.0, "<="))
-            add(ManualField("$prefix.atr_14_percent", "${label}ATR比率", 0.0, 100.0, "<="))
-            add(ManualField("$prefix.price_vs_sma_25_percent", "${label}25本移動平均乖離率", -100.0, 500.0, ">="))
-            add(ManualField("$prefix.price_vs_sma_75_percent", "${label}75本移動平均乖離率", -100.0, 500.0, ">="))
-            add(ManualField("$prefix.return_20_percent", "${label}20本騰落率", -100.0, 10000.0, ">="))
-            add(ManualField("$prefix.return_60_percent", "${label}60本騰落率", -100.0, 100000.0, ">="))
-            add(ManualField("$prefix.volume_ratio_20", "${label}20本平均出来高比", 0.0, 10000.0, ">="))
-        }
-    },
+    ),
 )
 
 class ApiClient(private val baseUrl: String = "http://10.0.2.2:8000") {
