@@ -12,6 +12,14 @@ def compact_sql(name: str) -> str:
 
 
 class SupabaseSchemaTests(unittest.TestCase):
+    def test_manual_condition_limit_upgrade_matches_the_expanded_catalog(self) -> None:
+        sql = compact_sql("manual_condition_limit_upgrade.sql")
+        self.assertIn("jsonb_array_length(manual_conditions) <= 128", sql)
+        self.assertIn(
+            "jsonb_array_length(expectation_manual_conditions) <= 128", sql,
+        )
+        self.assertNotIn("delete from", sql)
+
     def test_service_role_can_read_preferences(self) -> None:
         sql = compact_sql("screening_preferences.sql")
         self.assertIn(

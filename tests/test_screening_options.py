@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from modules.screening_options import ScreeningOptions
+from modules.screening_options import MAX_MANUAL_CONDITIONS
 
 
 class ScreeningOptionsTestCase(unittest.TestCase):
@@ -26,6 +27,13 @@ class ScreeningOptionsTestCase(unittest.TestCase):
             self.options.manual_rule([{"field": "fundamental.per", "operator": "<=", "value": 999}])
         with self.assertRaises(ValueError):
             self.options.manual_rule([{"field": "os.system", "operator": "<=", "value": 1}])
+
+    def test_manual_rule_limit_supports_the_expanded_catalog(self) -> None:
+        condition = {"field": "fundamental.per", "operator": "<=", "value": 12}
+        rule = self.options.manual_rule([condition] * MAX_MANUAL_CONDITIONS)
+        self.assertEqual(len(rule["all"]), MAX_MANUAL_CONDITIONS)
+        with self.assertRaisesRegex(ValueError, "1 to 128"):
+            self.options.manual_rule([condition] * (MAX_MANUAL_CONDITIONS + 1))
 
     def test_period_presets_are_available_for_every_timeframe(self) -> None:
         with Path("config/screening_options.yaml").open(encoding="utf-8") as file:
