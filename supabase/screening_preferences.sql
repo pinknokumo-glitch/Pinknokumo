@@ -16,7 +16,9 @@ create table if not exists public.screening_preferences (
     check (target_return_percent > 0 and target_return_percent <= 100),
   updated_at timestamptz not null default now(),
   constraint auto_requires_genre check (mode <> 'auto' or genre_id is not null),
-  constraint manual_condition_limit check (jsonb_array_length(manual_conditions) <= 32)
+  constraint manual_condition_limit check (jsonb_array_length(manual_conditions) <= 128),
+  constraint expectation_manual_condition_limit
+    check (jsonb_array_length(expectation_manual_conditions) <= 128)
 );
 
 alter table public.screening_preferences
@@ -44,7 +46,13 @@ alter table public.screening_preferences
 drop constraint if exists manual_condition_limit;
 alter table public.screening_preferences
 add constraint manual_condition_limit
-check (jsonb_array_length(manual_conditions) <= 32);
+check (jsonb_array_length(manual_conditions) <= 128);
+
+alter table public.screening_preferences
+drop constraint if exists expectation_manual_condition_limit;
+alter table public.screening_preferences
+add constraint expectation_manual_condition_limit
+check (jsonb_array_length(expectation_manual_conditions) <= 128);
 
 alter table public.screening_preferences
 drop constraint if exists screening_preferences_holding_days_check;

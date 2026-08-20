@@ -8,6 +8,8 @@ import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
 
+private const val MAX_MANUAL_CONDITIONS = 128
+
 data class SupabaseSession(
     val accessToken: String,
     val refreshToken: String,
@@ -240,8 +242,12 @@ class SupabaseClient(
         require(preference.mode != "manual" || preference.manualConditions.isNotEmpty()) {
             "マニュアルのソート条件を1件以上入力してください"
         }
-        require(preference.manualConditions.size <= 32) { "ソート条件は32件までです" }
-        require(preference.expectationManualConditions.size <= 32) { "期待値条件は32件までです" }
+        require(preference.manualConditions.size <= MAX_MANUAL_CONDITIONS) {
+            "ソート条件は${MAX_MANUAL_CONDITIONS}件までです"
+        }
+        require(preference.expectationManualConditions.size <= MAX_MANUAL_CONDITIONS) {
+            "期待値条件は${MAX_MANUAL_CONDITIONS}件までです"
+        }
         require(preference.holdingDays in 1..1000) { "検証期間は1～1000営業日で入力してください" }
         require(preference.tradeDirection in setOf("long", "short")) {
             "売買方向が不正です"

@@ -95,6 +95,7 @@ $publishFiles = @(
     "supabase/holding_period_upgrade.sql",
     "supabase/conditional_price_estimate_upgrade.sql",
     "supabase/outcome_probability_upgrade.sql",
+    "supabase/manual_condition_limit_upgrade.sql",
     "supabase/screening_result_summary_upgrade.sql",
     "supabase/pooled_backtest_upgrade.sql",
     "tests/test_cloud_results.py",
