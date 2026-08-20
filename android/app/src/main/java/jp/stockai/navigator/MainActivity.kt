@@ -1148,7 +1148,18 @@ private fun ConditionFieldsPanel(
                 Text(if (expanded) "▲ 閉じる" else "▼ 開く")
             }
             if (expanded) {
+                var previousGroup: String? = null
                 fields.forEach { field ->
+                    val group = manualFieldGroup(field.field)
+                    if (field.category == "technical" && group != previousGroup) {
+                        Text(
+                            group,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                        )
+                        previousGroup = group
+                    }
                     val selectedOperator = operators[field.field] ?: field.defaultOperator
                     Row(
                         Modifier.fillMaxWidth(),
@@ -2279,6 +2290,12 @@ private fun ScreeningScreen(
                         "${if (sortCategory == "technical") "テクニカル" else "ファンダメンタル"}条件（入力項目をANDで使用）",
                         style = MaterialTheme.typography.titleMedium,
                     )
+                    if (sortCategory == "technical") {
+                        Text(
+                            "短期・標準・長期は別々の条件として入力できます。空欄の期間は判定に使用しません。",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
                 if (sortCategory == "technical") {
                     listOf("daily" to "日足", "weekly" to "週足", "monthly" to "月足").forEach { (prefix, label) ->
@@ -2435,6 +2452,12 @@ private fun ScreeningScreen(
                         "${if (expectationCategory == "technical") "テクニカル" else "ファンダメンタル"}期待値条件（入力項目をANDで使用）",
                         style = MaterialTheme.typography.titleMedium,
                     )
+                    if (expectationCategory == "technical") {
+                        Text(
+                            "期間内に達成させたい短期・標準・長期の条件だけ入力してください。",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
                 if (expectationCategory == "technical") {
                     listOf("daily" to "日足", "weekly" to "週足", "monthly" to "月足").forEach { (prefix, label) ->
@@ -3129,18 +3152,18 @@ private fun PriceChart(prices: List<Price>, modifier: Modifier = Modifier) {
 
 private fun formatConditionSummary(summary: String): String {
     val labels = mapOf(
-        "daily.rsi_14" to "日足RSI",
-        "weekly.rsi_14" to "週足RSI",
-        "monthly.rsi_14" to "月足RSI",
+        "daily.rsi_14" to "日足RSI（標準・14本）",
+        "weekly.rsi_14" to "週足RSI（標準・14本）",
+        "monthly.rsi_14" to "月足RSI（標準・14本）",
         "daily.close" to "日足終値",
         "daily.sma_25" to "25日移動平均",
         "daily.sma_75" to "75日移動平均",
-        "daily.macd" to "MACD",
-        "daily.macd_signal" to "MACDシグナル",
-        "daily.macd_histogram" to "MACDヒストグラム",
+        "daily.macd" to "日足MACD（標準・12/26/9本）",
+        "daily.macd_signal" to "日足MACDシグナル（標準・12/26/9本）",
+        "daily.macd_histogram" to "日足MACDヒストグラム（標準・12/26/9本）",
         "daily.adx_14" to "日足ADX",
-        "daily.stoch_k" to "ストキャスティクス%K",
-        "daily.stoch_d" to "ストキャスティクス%D",
+        "daily.stoch_k" to "日足ストキャスティクス%K（標準・14/3本）",
+        "daily.stoch_d" to "日足ストキャスティクス%D（標準・14/3本）",
         "daily.bb_percent_b" to "ボリンジャー%B",
         "daily.atr_14_percent" to "ATR比率",
         "daily.price_vs_sma_5_percent" to "5日移動平均乖離率",
@@ -3241,10 +3264,15 @@ private fun readableIndicatorName(field: String): String {
     }
     val key = field.substringAfter('.')
     val name = when {
-        key == "macd" -> "MACD"
-        key == "macd_histogram" -> "MACDヒストグラム"
-        key == "stoch_k" -> "ストキャスティクス%K"
-        key == "stoch_d" -> "ストキャスティクス%D"
+        key.startsWith("rsi_") -> "RSI（${key.removePrefix("rsi_")}本）"
+        key == "macd" -> "MACD（標準・12/26/9本）"
+        key == "macd_histogram" -> "MACDヒストグラム（標準・12/26/9本）"
+        key.startsWith("macd_histogram_") -> "MACDヒストグラム（${macdPeriodLabel(key.removePrefix("macd_histogram_"))}）"
+        key.startsWith("macd_") -> "MACD（${macdPeriodLabel(key.removePrefix("macd_"))}）"
+        key == "stoch_k" -> "ストキャスティクス%K（標準・14/3本）"
+        key == "stoch_d" -> "ストキャスティクス%D（標準・14/3本）"
+        key.startsWith("stoch_k_") -> "ストキャスティクス%K（${stochasticPeriodLabel(key.removePrefix("stoch_k_"))}）"
+        key.startsWith("stoch_d_") -> "ストキャスティクス%D（${stochasticPeriodLabel(key.removePrefix("stoch_d_"))}）"
         key == "adx_14" -> "ADX"
         key == "bb_percent_b" -> "ボリンジャー%B"
         key == "atr_14_percent" -> "ATR比率"
@@ -3256,6 +3284,35 @@ private fun readableIndicatorName(field: String): String {
         else -> key
     }
     return prefix + name
+}
+
+private fun macdPeriodLabel(periods: String): String = when (periods) {
+    "5_25_9" -> "短期・5/25/9本"
+    "12_26_9" -> "標準・12/26/9本"
+    "25_75_14" -> "長期・25/75/14本"
+    else -> periods.replace('_', '/') + "本"
+}
+
+private fun stochasticPeriodLabel(periods: String): String = when (periods) {
+    "9_3" -> "短期・9/3本"
+    "14_3" -> "標準・14/3本"
+    else -> periods.replace('_', '/') + "本"
+}
+
+private fun manualFieldGroup(field: String): String {
+    val key = field.substringAfter('.')
+    return when {
+        key.startsWith("rsi_") -> "RSI"
+        key.startsWith("macd") -> "MACD"
+        key.startsWith("stoch_") -> "ストキャスティクス"
+        key.startsWith("price_vs_sma_") -> "移動平均乖離率"
+        key.startsWith("adx_") -> "トレンド強度（ADX）"
+        key.startsWith("bb_") -> "ボリンジャーバンド"
+        key.startsWith("atr_") -> "値動き幅（ATR）"
+        key.startsWith("return_") -> "騰落率"
+        key.startsWith("volume_ratio_") -> "出来高"
+        else -> "その他"
+    }
 }
 
 private fun backtestStatusLabel(status: String): String = when (status) {

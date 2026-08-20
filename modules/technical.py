@@ -19,22 +19,42 @@ class TechnicalAnalyzer:
 
         rsi_cfg = self.config["rsi"]
         if rsi_cfg["enabled"]:
-            period = int(rsi_cfg["period"])
             delta = close.diff()
             gain, loss = delta.clip(lower=0), -delta.clip(upper=0)
-            avg_gain = gain.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-            avg_loss = loss.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-            rsi = 100 - (100 / (1 + avg_gain / avg_loss.replace(0, pd.NA)))
-            rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
-            rsi = rsi.mask((avg_gain == 0) & (avg_loss > 0), 0.0)
-            frame[f"rsi_{period}"] = rsi.mask((avg_gain == 0) & (avg_loss == 0), 50.0)
+            for period in self._periods(rsi_cfg):
+                avg_gain = gain.ewm(
+                    alpha=1 / period, adjust=False, min_periods=period,
+                ).mean()
+                avg_loss = loss.ewm(
+                    alpha=1 / period, adjust=False, min_periods=period,
+                ).mean()
+                rsi = 100 - (100 / (1 + avg_gain / avg_loss.replace(0, pd.NA)))
+                rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
+                rsi = rsi.mask((avg_gain == 0) & (avg_loss > 0), 0.0)
+                frame[f"rsi_{period}"] = rsi.mask(
+                    (avg_gain == 0) & (avg_loss == 0), 50.0,
+                )
 
         macd_cfg = self.config["macd"]
         if macd_cfg["enabled"]:
-            fast, slow, signal = (int(macd_cfg[key]) for key in ("fast", "slow", "signal"))
-            macd = close.ewm(span=fast, adjust=False).mean() - close.ewm(span=slow, adjust=False).mean()
-            frame["macd"], frame["macd_signal"] = macd, macd.ewm(span=signal, adjust=False).mean()
-            frame["macd_histogram"] = frame["macd"] - frame["macd_signal"]
+            default_macd = tuple(
+                int(macd_cfg[key]) for key in ("fast", "slow", "signal")
+            )
+            for fast, slow, signal in self._macd_presets(macd_cfg):
+                macd = (
+                    close.ewm(span=fast, adjust=False).mean()
+                    - close.ewm(span=slow, adjust=False).mean()
+                )
+                signal_line = macd.ewm(span=signal, adjust=False).mean()
+                suffix = f"{fast}_{slow}_{signal}"
+                frame[f"macd_{suffix}"] = macd
+                frame[f"macd_signal_{suffix}"] = signal_line
+                frame[f"macd_histogram_{suffix}"] = macd - signal_line
+                if (fast, slow, signal) == default_macd:
+                    # Preserve every saved profile that uses the original field names.
+                    frame["macd"] = macd
+                    frame["macd_signal"] = signal_line
+                    frame["macd_histogram"] = macd - signal_line
 
         ma_cfg = self.config["moving_average"]
         if ma_cfg["enabled"]:
@@ -76,15 +96,63 @@ class TechnicalAnalyzer:
 
         stoch_cfg = self.config["stochastic"]
         if stoch_cfg["enabled"]:
-            k_period, d_period = int(stoch_cfg["k_period"]), int(stoch_cfg["d_period"])
-            lowest, highest = low.rolling(k_period).min(), high.rolling(k_period).max()
-            frame["stoch_k"] = 100 * (close - lowest) / (highest - lowest)
-            frame["stoch_d"] = frame["stoch_k"].rolling(d_period).mean()
+            default_stochastic = (
+                int(stoch_cfg["k_period"]), int(stoch_cfg["d_period"]),
+            )
+            for k_period, d_period in self._stochastic_presets(stoch_cfg):
+                lowest = low.rolling(k_period).min()
+                highest = high.rolling(k_period).max()
+                stochastic_k = 100 * (close - lowest) / (highest - lowest)
+                stochastic_d = stochastic_k.rolling(d_period).mean()
+                suffix = f"{k_period}_{d_period}"
+                frame[f"stoch_k_{suffix}"] = stochastic_k
+                frame[f"stoch_d_{suffix}"] = stochastic_d
+                if (k_period, d_period) == default_stochastic:
+                    frame["stoch_k"] = stochastic_k
+                    frame["stoch_d"] = stochastic_d
         for sessions in (5, 20, 60):
             frame[f"return_{sessions}_percent"] = close.pct_change(sessions) * 100
         volume_average = frame["volume"].rolling(20, min_periods=20).mean()
         frame["volume_ratio_20"] = frame["volume"] / volume_average * 100
         return frame
+
+    @staticmethod
+    def _periods(config: Mapping[str, object]) -> list[int]:
+        raw_periods = config.get("periods") or [config["period"]]
+        periods = list(dict.fromkeys(int(value) for value in raw_periods))
+        if not periods or any(period <= 0 for period in periods):
+            raise ValueError("indicator periods must contain positive integers")
+        return periods
+
+    @staticmethod
+    def _macd_presets(config: Mapping[str, object]) -> list[tuple[int, int, int]]:
+        raw_presets = config.get("presets") or [{
+            "fast": config["fast"], "slow": config["slow"],
+            "signal": config["signal"],
+        }]
+        presets = list(dict.fromkeys(
+            (int(item["fast"]), int(item["slow"]), int(item["signal"]))
+            for item in raw_presets
+        ))
+        if not presets or any(
+            fast <= 0 or slow <= fast or signal <= 0
+            for fast, slow, signal in presets
+        ):
+            raise ValueError("MACD presets require 0 < fast < slow and signal > 0")
+        return presets
+
+    @staticmethod
+    def _stochastic_presets(config: Mapping[str, object]) -> list[tuple[int, int]]:
+        raw_presets = config.get("presets") or [{
+            "k_period": config["k_period"], "d_period": config["d_period"],
+        }]
+        presets = list(dict.fromkeys(
+            (int(item["k_period"]), int(item["d_period"]))
+            for item in raw_presets
+        ))
+        if not presets or any(k_period <= 0 or d_period <= 0 for k_period, d_period in presets):
+            raise ValueError("stochastic presets require positive periods")
+        return presets
 
     @staticmethod
     def latest_values(frame: pd.DataFrame) -> dict[str, float]:
