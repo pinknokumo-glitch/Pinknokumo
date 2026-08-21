@@ -42,6 +42,7 @@ $publishFiles = @(
     "android/app/src/main/java/jp/stockai/navigator/SupabaseClient.kt",
     "api.py",
     "config/indicators.yaml",
+    "config/screening.yaml",
     "config/settings.yaml",
     "config/screening_options.yaml",
     "docs/SUPABASE_SETUP.md",

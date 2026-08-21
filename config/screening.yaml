@@ -5,13 +5,13 @@ auto_relaxation:
   stages:
     - id: daily
       label: 日足のみ緩和
-      thresholds:
-        daily.rsi_14: 60
+      timeframe_relaxation:
+        daily: {oscillator_le: 60, oscillator_ge: 40, zero_centered: true}
     - id: daily_weekly
       label: 日足・週足を緩和
-      thresholds:
-        daily.rsi_14: 60
-        weekly.rsi_14: 50
+      timeframe_relaxation:
+        daily: {oscillator_le: 60, oscillator_ge: 40, zero_centered: true}
+        weekly: {oscillator_le: 50, oscillator_ge: 50, zero_centered: true}
 
 profiles:
   notification_demo:
