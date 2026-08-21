@@ -50,6 +50,75 @@ class ScreeningRelaxationTests(unittest.TestCase):
         )
         self.assertEqual(self.values(stages[-1][2])["monthly.rsi_14"], 20)
 
+    def test_new_oscillator_periods_relax_daily_then_weekly_only(self) -> None:
+        rule = {"all": [
+            {"field": "daily.rsi_9", "operator": "<=", "value": 20},
+            {"field": "weekly.rsi_9", "operator": "<=", "value": 20},
+            {"field": "monthly.rsi_9", "operator": "<=", "value": 20},
+            {"field": "daily.stoch_k_9_3", "operator": ">=", "value": 80},
+            {"field": "weekly.macd_5_25_9", "operator": ">=", "value": 5},
+            {"field": "daily.macd_histogram_25_75_14", "operator": "<=", "value": -5},
+        ]}
+        config = {"enabled_profiles": ["oversold"], "stages": [
+            {
+                "id": "daily", "label": "日足のみ緩和",
+                "timeframe_relaxation": {
+                    "daily": {
+                        "oscillator_le": 60, "oscillator_ge": 40,
+                        "zero_centered": True,
+                    },
+                },
+            },
+            {
+                "id": "daily_weekly", "label": "日足・週足を緩和",
+                "timeframe_relaxation": {
+                    "daily": {
+                        "oscillator_le": 60, "oscillator_ge": 40,
+                        "zero_centered": True,
+                    },
+                    "weekly": {
+                        "oscillator_le": 50, "oscillator_ge": 50,
+                        "zero_centered": True,
+                    },
+                },
+            },
+        ]}
+
+        stages = staged_rules("cloud_manual", rule, config)
+        daily = self.values(stages[1][2])
+        self.assertEqual(daily["daily.rsi_9"], 60)
+        self.assertEqual(daily["weekly.rsi_9"], 20)
+        self.assertEqual(daily["monthly.rsi_9"], 20)
+        self.assertEqual(daily["daily.stoch_k_9_3"], 40)
+        self.assertEqual(daily["weekly.macd_5_25_9"], 5)
+        self.assertEqual(daily["daily.macd_histogram_25_75_14"], 0)
+
+        daily_weekly = self.values(stages[2][2])
+        self.assertEqual(daily_weekly["daily.rsi_9"], 60)
+        self.assertEqual(daily_weekly["weekly.rsi_9"], 50)
+        self.assertEqual(daily_weekly["monthly.rsi_9"], 20)
+        self.assertEqual(daily_weekly["weekly.macd_5_25_9"], 0)
+
+    def test_relaxation_never_tightens_an_already_permissive_condition(self) -> None:
+        rule = {"all": [
+            {"field": "daily.rsi_9", "operator": "<=", "value": 80},
+            {"field": "daily.rsi_14", "operator": ">=", "value": 20},
+            {"field": "daily.macd", "operator": ">=", "value": -5},
+        ]}
+        config = {"stages": [{
+            "id": "daily", "timeframe_relaxation": {
+                "daily": {
+                    "oscillator_le": 60, "oscillator_ge": 40,
+                    "zero_centered": True,
+                },
+            },
+        }]}
+
+        values = self.values(staged_rules("cloud_manual", rule, config)[1][2])
+        self.assertEqual(values["daily.rsi_9"], 80)
+        self.assertEqual(values["daily.rsi_14"], 20)
+        self.assertEqual(values["daily.macd"], -5)
+
 
 if __name__ == "__main__":
     unittest.main()
