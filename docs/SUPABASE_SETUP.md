@@ -16,6 +16,15 @@ select Rakuten, canonical Wilder, or an out-of-sample automatic comparison.
 - The cloud value is validated again against `config/screening_options.yaml` before use.
 - Until all three server environment variables are configured, the daily job continues using the repository configuration.
 
+## Anonymous Android access
+
+In Supabase Dashboard, open **Authentication → Sign In / Providers → Anonymous**
+and enable **Allow anonymous sign-ins**. Android 0.24.0 and later creates a
+device-specific anonymous user automatically, so email registration is not
+used. Row Level Security still isolates preferences and results by `auth.uid()`.
+Clearing app data or reinstalling creates a new user and cannot restore the old
+anonymous user's settings.
+
 ## Required Supabase values
 
 - `SUPABASE_URL`

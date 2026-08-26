@@ -122,6 +122,27 @@ class SupabaseClient(
 ) {
     val isConfigured: Boolean get() = projectUrl.startsWith("https://") && anonKey.isNotBlank()
 
+    fun signInAnonymously(): SupabaseSession {
+        require(isConfigured) { "Supabaseが未設定です" }
+        val response = request("POST", "/auth/v1/signup", JSONObject())
+        return sessionFromResponse(response, "匿名ユーザー")
+    }
+
+    fun restoreOrCreateAnonymous(session: SupabaseSession?): SupabaseSession {
+        if (session == null) return signInAnonymously()
+        if (!session.needsRefresh()) return session
+        return try {
+            refreshSession(session)
+        } catch (error: SupabaseRequestException) {
+            if (error.statusCode !in setOf(
+                    HttpURLConnection.HTTP_BAD_REQUEST,
+                    HttpURLConnection.HTTP_UNAUTHORIZED,
+                )
+            ) throw error
+            signInAnonymously()
+        }
+    }
+
     fun signIn(email: String, password: String): SupabaseSession {
         require(isConfigured) { "Supabaseが未設定です" }
         require(email.isNotBlank() && password.isNotBlank()) { "メールとパスワードを入力してください" }
@@ -615,7 +636,7 @@ class SupabaseClient(
             accessToken = response.getString("access_token"),
             refreshToken = response.optString("refresh_token"),
             userId = user.getString("id"),
-            email = user.optString("email", fallbackEmail),
+            email = user.optString("email").ifBlank { fallbackEmail },
             expiresAtEpochSeconds = response.optLong(
                 "expires_at",
                 Instant.now().epochSecond + response.optLong("expires_in", 3600),

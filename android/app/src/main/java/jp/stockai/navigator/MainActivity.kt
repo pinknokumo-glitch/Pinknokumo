@@ -143,17 +143,12 @@ class MainActivity : ComponentActivity() {
                         var storedSession by remember(callbackSession) {
                             mutableStateOf(callbackSession ?: sessionStore.load())
                         }
-                        StartupLoginScreen(
+                        StartupAutoAuthScreen(
                             storedSession = storedSession,
                             onAuthenticated = {
                                 sessionStore.save(it)
                                 storedSession = it
                                 activeSession = it
-                            },
-                            onForgetStoredSession = {
-                                sessionStore.clear()
-                                callbackSession = null
-                                storedSession = null
                             },
                         )
                     } else {
@@ -181,13 +176,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStop() {
-        super.onStop()
-        // Keep the encrypted refresh token, but lock the visible app whenever it
-        // leaves the foreground. Returning users can unlock with one tap.
-        activeSession = null
-    }
-
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -202,6 +190,51 @@ class MainActivity : ComponentActivity() {
         private val VALID_START_PAGES = setOf(
             "home", "results", "candidates", "stock", "settings", "operations", "menu",
         )
+    }
+}
+
+@Composable
+private fun StartupAutoAuthScreen(
+    storedSession: SupabaseSession?,
+    onAuthenticated: (SupabaseSession) -> Unit,
+) {
+    val cloud = remember { SupabaseClient() }
+    var retryToken by remember { mutableIntStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(storedSession, retryToken) {
+        error = null
+        runCatching {
+            withContext(Dispatchers.IO) {
+                cloud.restoreOrCreateAnonymous(storedSession)
+            }
+        }.onSuccess(onAuthenticated).onFailure {
+            error = it.message ?: "自動ログインできませんでした"
+        }
+    }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("StockAI Navigator") }) }) { padding ->
+        Column(
+            Modifier.padding(padding).fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (error == null) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text("利用準備中…")
+            } else {
+                Text("クラウドへ接続できません", color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(8.dp))
+                Text(error!!, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = { retryToken++ }) { Text("再試行") }
+                Text(
+                    "初回利用にはSupabaseの匿名ログイン設定が必要です。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 
@@ -613,7 +646,7 @@ private fun HomeMenuScreen(onOpen: (String) -> Unit) {
                 item { PanelButton("⚙", "設定", Modifier.fillMaxWidth().height(106.dp)) { onOpen("settings") } }
                 item { PanelButton("●", "運用", Modifier.fillMaxWidth().height(106.dp)) { onOpen("operations") } }
                 item { PanelButton("☰", "メニュー", Modifier.fillMaxWidth().height(106.dp)) { onOpen("menu") } }
-                item { PanelButton("↪", "ログアウト", Modifier.fillMaxWidth().height(96.dp)) { onOpen("logout") } }
+                item { PanelButton("↪", "利用データを初期化", Modifier.fillMaxWidth().height(96.dp)) { onOpen("logout") } }
             }
         }
     }
@@ -674,14 +707,14 @@ private fun MenuScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             item { PanelButton("⌕", "指定銘柄分析", Modifier.fillMaxWidth().height(100.dp)) { onOpen("stock") } }
             item { PanelButton("⚙", "設定", Modifier.fillMaxWidth().height(100.dp)) { onOpen("settings") } }
             item { PanelButton("●", "運用", Modifier.fillMaxWidth().height(100.dp)) { onOpen("operations") } }
-            item { PanelButton("↪", "ログアウト", Modifier.fillMaxWidth().height(100.dp)) { onOpen("logout") } }
+            item { PanelButton("↪", "利用データを初期化", Modifier.fillMaxWidth().height(100.dp)) { onOpen("logout") } }
         }
     }
 }
 
 private val privacyItems = listOf(
-    "個人情報" to "認証にはSupabaseを利用します。パスワードをアプリ独自のデータベースへ保存しません。",
-    "設定データ" to "ソート条件、期待値条件、分析依頼はログインユーザーごとに分離して保存します。",
+    "個人情報" to "Supabaseの匿名認証を利用し、メールアドレスやパスワードを収集しません。",
+    "設定データ" to "ソート条件、期待値条件、分析依頼は端末専用の匿名ユーザーごとに分離して保存します。アプリ削除や初期化後は復元できません。",
     "投資判断" to "本アプリの情報は投資助言ではありません。期待値やバックテストは将来の利益を保証しません。",
     "データ" to "市場データには遅延、欠損、訂正が発生する可能性があります。最終判断は利用者自身で行ってください。",
 )
@@ -906,7 +939,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.23.0",
+        "バージョン" to "StockAI Navigator 0.24.0",
+        "0.24.0" to "メール登録と起動時のログイン操作を廃止。端末専用の匿名アカウントを自動作成・復元し、初回だけ免責とチュートリアルを表示。",
         "0.23.0" to "RSIを楽天式・ワイルダー式・全銘柄の検証期間外成績による自動比較から選択可能にし、採用方式を配信状態へ表示。",
         "0.21.1" to "期待値条件なしを正式に許可し、指定営業日の期間最終日決済として処理。入口の手動条件なしは保存時に検知。",
         "0.21.0" to "営業日数を最大監視期間として扱い、期間内の条件初回達成で決済。条件なしは期間最終日決済とし、10%・20%含み益確率を追加。",
@@ -1802,7 +1836,7 @@ private fun CandidatePoolScreen(
 private fun LogoutScreen(email: String, onBack: () -> Unit, onLogout: () -> Unit) {
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("ログアウト") },
+            title = { Text("利用データを初期化") },
             navigationIcon = { TextButton(onClick = onBack) { Text("戻る") } },
         )
     }) { padding ->
@@ -1810,10 +1844,10 @@ private fun LogoutScreen(email: String, onBack: () -> Unit, onLogout: () -> Unit
             Modifier.padding(padding).padding(24.dp).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("ログイン中: $email")
-            Text("ログアウトすると、次回はメールアドレスとパスワードでの認証が必要です。")
+            Text("現在の端末アカウント: ${email.ifBlank { "匿名ユーザー" }}")
+            Text("初期化すると保存条件・配信履歴との紐付けを失い、元に戻せません。新しい匿名アカウントで利用を再開します。")
             Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                Text("ログアウト")
+                Text("初期化する")
             }
         }
     }
