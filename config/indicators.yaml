@@ -1,7 +1,7 @@
 indicators:
   rsi:
     enabled: true
-    method: wilder
+    method: rakuten
     period: 14
     periods: [9, 14]
     timeframes: [daily, weekly, monthly]

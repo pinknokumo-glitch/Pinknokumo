@@ -186,6 +186,7 @@ class CloudResultPublisher:
         target_return_percent: float = 5.0,
         relaxation_label: str | None = None,
         relaxation_counts: Sequence[Mapping[str, object]] = (),
+        rsi_method: str = "rakuten",
     ) -> None:
         payload = [{
             "user_id": self.user_id,
@@ -200,6 +201,7 @@ class CloudResultPublisher:
             "relaxation_label": relaxation_label,
             "relaxation_counts": list(relaxation_counts),
             "hit_count": hit_count,
+            "rsi_method": rsi_method,
         }]
         request = Request(
             f"{self.url}/rest/v1/screening_runs?on_conflict=user_id",

@@ -54,6 +54,7 @@ def preference_signature(preference: ScreeningPreference) -> str:
         "trade_direction": preference.trade_direction,
         "expectation_evaluation_mode": preference.expectation_evaluation_mode,
         "target_return_percent": preference.target_return_percent,
+        "rsi_method": preference.rsi_method,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:12]
@@ -183,13 +184,22 @@ def run_cloud_batch(
         })
     for signature, members in queued_groups:
         try:
-            outcome = _compute_group(
-                database, signature, members[0], options, screening_config,
-                indicator_config, backtest_config, scoring_config,
-                snapshots, company_names, sector_names, rule_engine,
-                max_hits_per_group=max_hits_per_group,
-                settings=settings,
+            methods = (
+                ("rakuten", "wilder")
+                if members[0].rsi_method == "auto"
+                else (members[0].rsi_method,)
             )
+            candidates = [
+                _compute_group(
+                    database, f"{signature}_{method}", members[0], options,
+                    screening_config, indicator_config, backtest_config,
+                    scoring_config, snapshots, company_names, sector_names,
+                    rule_engine, max_hits_per_group=max_hits_per_group,
+                    settings=settings, rsi_method=method,
+                )
+                for method in methods
+            ]
+            outcome = max(candidates, key=_auto_rsi_rank)
         except Exception as error:
             failed_groups.append({
                 "signature": signature,
@@ -228,6 +238,7 @@ def run_cloud_batch(
                     target_return_percent=members[0].target_return_percent,
                     relaxation_label=outcome["relaxation_label"],
                     relaxation_counts=outcome["relaxation_counts"],
+                    rsi_method=outcome["rsi_method"],
                 )
                 published_users += 1
             except Exception as error:
@@ -251,6 +262,7 @@ def run_cloud_batch(
             "backtest_reused_count": outcome["backtest_reused_count"],
             "history_backfill": outcome["history_backfill"],
             "pooled_backtest": outcome["pooled_backtest"],
+            "rsi_method": outcome["rsi_method"],
         })
     return {
         "preference_count": len(preferences),
@@ -288,15 +300,18 @@ def _compute_group(
     rule_engine: RuleEngine,
     max_hits_per_group: int = 100,
     settings: Mapping[str, object] | None = None,
+    rsi_method: str = "rakuten",
 ) -> dict[str, object]:
     resolved, base_profile = apply_preference(
         preference, options, screening_config
     )
-    base_rule = resolved["profiles"][base_profile]
+    base_rule = _rule_for_rsi_method(resolved["profiles"][base_profile], rsi_method)
     expectation_config, expectation_profile = apply_expectation_preference(
         preference, options, screening_config
     )
-    expectation_rule = expectation_config["profiles"][expectation_profile]
+    expectation_rule = _rule_for_rsi_method(
+        expectation_config["profiles"][expectation_profile], rsi_method
+    )
     configured_evaluation_mode = preference.expectation_evaluation_mode
     effective_evaluation_mode = configured_evaluation_mode
     if configured_evaluation_mode in {"condition_exit", "period_end"}:
@@ -322,7 +337,8 @@ def _compute_group(
     for stage_index, (_, stage_label, stage_rule) in enumerate(relaxation_stages):
         stage_profile = f"cloud_{signature}_{stage_index}"
         hits = []
-        for snapshot in snapshots:
+        for source_snapshot in snapshots:
+            snapshot = _snapshot_for_rsi_method(source_snapshot, rsi_method)
             evaluation = rule_engine.evaluate(stage_rule, snapshot)
             if evaluation.matched:
                 code = str(snapshot["code"])
@@ -522,7 +538,64 @@ def _compute_group(
             "tested_stock_count": 0,
             "coverage_ratio": 0.0,
         },
+        "rsi_method": rsi_method,
     }
+
+
+def _rule_for_rsi_method(value: object, method: str) -> object:
+    if isinstance(value, list):
+        return [_rule_for_rsi_method(item, method) for item in value]
+    if not isinstance(value, Mapping):
+        return value
+    output = {
+        key: _rule_for_rsi_method(item, method)
+        for key, item in value.items()
+    }
+    for key in ("field", "value_from"):
+        field = output.get(key)
+        if isinstance(field, str):
+            prefix, separator, name = field.partition(".")
+            if separator and name.startswith("rsi_") and not name.endswith(
+                ("_rakuten", "_wilder")
+            ):
+                if name.endswith("_previous"):
+                    name = f"{name[:-len('_previous')]}_{method}_previous"
+                else:
+                    name = f"{name}_{method}"
+                output[key] = f"{prefix}.{name}"
+    return output
+
+
+def _snapshot_for_rsi_method(
+    source: Mapping[str, object], method: str,
+) -> dict[str, object]:
+    snapshot = dict(source)
+    suffix = f"_{method}"
+    for key, value in source.items():
+        prefix, separator, name = str(key).partition(".")
+        if separator and name.startswith("rsi_") and name.endswith(suffix):
+            snapshot[f"{prefix}.{name[:-len(suffix)]}"] = value
+    return snapshot
+
+
+def _auto_rsi_rank(outcome: Mapping[str, object]) -> tuple[float, float, float, int, int]:
+    pooled = outcome.get("pooled_backtest")
+    market = pooled.get("market") if isinstance(pooled, Mapping) else None
+    market = market if isinstance(market, Mapping) else {}
+    def number(name: str) -> float:
+        value = market.get(name)
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return float("-inf")
+        return result if math.isfinite(result) else float("-inf")
+    return (
+        number("out_of_sample_outcome_probability_percent"),
+        number("out_of_sample_average_return_percent"),
+        number("out_of_sample_win_rate_percent"),
+        int(market.get("out_of_sample_trade_count") or 0),
+        1 if outcome.get("rsi_method") == "rakuten" else 0,
+    )
 
 
 def _latest_trade_date(database: Database) -> str:

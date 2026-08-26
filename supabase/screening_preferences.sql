@@ -14,6 +14,8 @@ create table if not exists public.screening_preferences (
     check (expectation_evaluation_mode in ('condition_exit', 'period_end', 'within_period_up', 'target_return')),
   target_return_percent double precision not null default 5.0
     check (target_return_percent > 0 and target_return_percent <= 100),
+  rsi_method text not null default 'rakuten'
+    check (rsi_method in ('auto', 'rakuten', 'wilder')),
   updated_at timestamptz not null default now(),
   constraint auto_requires_genre check (mode <> 'auto' or genre_id is not null),
   constraint manual_condition_limit check (jsonb_array_length(manual_conditions) <= 128),
@@ -37,6 +39,8 @@ alter table public.screening_preferences
 add column if not exists expectation_evaluation_mode text not null default 'condition_exit';
 alter table public.screening_preferences
 add column if not exists target_return_percent double precision not null default 5.0;
+alter table public.screening_preferences
+add column if not exists rsi_method text not null default 'rakuten';
 alter table public.screening_preferences
 drop constraint if exists screening_preferences_trade_direction_check;
 alter table public.screening_preferences

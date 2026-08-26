@@ -27,6 +27,7 @@ class ScreeningPreference:
     trade_direction: str = "long"
     expectation_evaluation_mode: str = "condition_exit"
     target_return_percent: float = 5.0
+    rsi_method: str = "rakuten"
 
 
 class CloudPreferenceClient:
@@ -54,7 +55,7 @@ class CloudPreferenceClient:
             "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days,"
             "expectation_mode,expectation_genre_id,expectation_manual_logic,"
             "expectation_manual_conditions,trade_direction,"
-            "expectation_evaluation_mode,target_return_percent&limit=1"
+            "expectation_evaluation_mode,target_return_percent,rsi_method&limit=1"
         )
         request = Request(endpoint, headers=self.headers())
         try:
@@ -143,6 +144,9 @@ class CloudPreferenceClient:
             raise ValueError(
                 "cloud target_return_percent must be greater than 0 and at most 100"
             )
+        rsi_method = str(raw.get("rsi_method") or "rakuten")
+        if rsi_method not in {"auto", "rakuten", "wilder"}:
+            raise ValueError("cloud rsi_method is invalid")
         return ScreeningPreference(
             user_id=user_id,
             mode=mode,
@@ -159,6 +163,7 @@ class CloudPreferenceClient:
             trade_direction=trade_direction,
             expectation_evaluation_mode=evaluation_mode,
             target_return_percent=target_return_percent,
+            rsi_method=rsi_method,
         )
 
     def fetch_all(self, options: ScreeningOptions) -> list[ScreeningPreference]:
@@ -167,7 +172,7 @@ class CloudPreferenceClient:
             "select=user_id,mode,genre_id,manual_logic,manual_conditions,holding_days,"
             "expectation_mode,expectation_genre_id,expectation_manual_logic,"
             "expectation_manual_conditions,trade_direction,"
-            "expectation_evaluation_mode,target_return_percent"
+            "expectation_evaluation_mode,target_return_percent,rsi_method"
             "&order=updated_at.asc"
         )
         request = Request(endpoint, headers=self.headers())
@@ -241,5 +246,6 @@ def apply_expectation_preference(
         trade_direction=preference.trade_direction,
         expectation_evaluation_mode=preference.expectation_evaluation_mode,
         target_return_percent=preference.target_return_percent,
+        rsi_method=preference.rsi_method,
     )
     return apply_preference(expectation, options, screening_config)
