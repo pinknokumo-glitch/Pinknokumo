@@ -12,6 +12,15 @@ def compact_sql(name: str) -> str:
 
 
 class SupabaseSchemaTests(unittest.TestCase):
+    def test_rsi_method_upgrade_is_rerunnable_and_bounded(self) -> None:
+        sql = compact_sql("rsi_method_upgrade.sql")
+        self.assertIn(
+            "add column if not exists rsi_method text not null default 'rakuten'",
+            sql,
+        )
+        self.assertIn("check (rsi_method in ('auto', 'rakuten', 'wilder'))", sql)
+        self.assertIn("check (rsi_method in ('rakuten', 'wilder'))", sql)
+
     def test_manual_condition_limit_upgrade_matches_the_expanded_catalog(self) -> None:
         sql = compact_sql("manual_condition_limit_upgrade.sql")
         self.assertIn("jsonb_array_length(manual_conditions) <= 128", sql)

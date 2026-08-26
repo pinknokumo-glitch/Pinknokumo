@@ -2,6 +2,12 @@
 
 This is the planned secure control plane for Android-to-cloud screening settings.
 
+## RSI calculation method upgrade
+
+Run `supabase/rsi_method_upgrade.sql` once in the Supabase SQL Editor. Existing
+users default to the Rakuten-compatible simple-average RSI; Android can then
+select Rakuten, canonical Wilder, or an out-of-sample automatic comparison.
+
 ## Security boundary
 
 - Android uses the public project URL, public anon key, and the signed-in user's short-lived JWT.

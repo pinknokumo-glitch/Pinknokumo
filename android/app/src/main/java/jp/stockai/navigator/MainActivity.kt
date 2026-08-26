@@ -866,6 +866,7 @@ private fun DataUpdateStatusScreen(session: SupabaseSession, onBack: () -> Unit)
             run?.let { Text("配信結果更新: ${formatJst(it.updatedAt)}") }
             run?.let {
                 Text("売買方向: ${tradeDirectionLabel(it.tradeDirection)}")
+                Text("RSI計算方式: ${rsiMethodLabel(it.rsiMethod)}")
                 Text("使用した緩和: ${it.relaxationLabel ?: "基準条件"}")
                 if (it.relaxationCounts.isNotEmpty()) {
                     Text(
@@ -905,7 +906,8 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 @Composable
 private fun AppInfoScreen(onBack: () -> Unit) {
     InfoListScreen("アプリ情報", onBack, listOf(
-        "バージョン" to "StockAI Navigator 0.21.1",
+        "バージョン" to "StockAI Navigator 0.23.0",
+        "0.23.0" to "RSIを楽天式・ワイルダー式・全銘柄の検証期間外成績による自動比較から選択可能にし、採用方式を配信状態へ表示。",
         "0.21.1" to "期待値条件なしを正式に許可し、指定営業日の期間最終日決済として処理。入口の手動条件なしは保存時に検知。",
         "0.21.0" to "営業日数を最大監視期間として扱い、期間内の条件初回達成で決済。条件なしは期間最終日決済とし、10%・20%含み益確率を追加。",
         "0.20.0" to "配信カードをブロンズ・シルバー・ゴールドのスコア色へ変更。初回ログイン時の免責確認と最新チュートリアルを追加。",
@@ -1876,6 +1878,7 @@ private fun ScreeningScreen(
     var tradeDirection by remember { mutableStateOf("long") }
     var evaluationMode by remember { mutableStateOf("condition_exit") }
     var targetReturnPercent by remember { mutableStateOf("5.0") }
+    var rsiMethod by remember { mutableStateOf("rakuten") }
     val manualValues = remember { mutableStateMapOf<String, String>() }
     val manualOperators = remember { mutableStateMapOf<String, String>() }
     val expectationManualValues = remember { mutableStateMapOf<String, String>() }
@@ -2013,6 +2016,7 @@ private fun ScreeningScreen(
             tradeDirection = tradeDirection,
             evaluationMode = resolvedEvaluationMode,
             targetReturnPercent = resolvedTarget,
+            rsiMethod = rsiMethod,
         )
     }
 
@@ -2158,6 +2162,7 @@ private fun ScreeningScreen(
                         else -> saved.evaluationMode
                     }
                     targetReturnPercent = saved.targetReturnPercent.toString()
+                    rsiMethod = saved.rsiMethod
                 }
             }
     }
@@ -2258,6 +2263,26 @@ private fun ScreeningScreen(
                         mode = "manual"
                         sortCategory = null
                         settingsPage = "sort_manual"
+                    }
+                }
+            }
+            if (settingsPage in setOf("sort_auto", "sort_manual")) item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("RSI計算方式", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "楽天式は楽天証券の表示と合わせます。自動は全銘柄の検証期間外成績で2方式を比較します。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    listOf(
+                        "rakuten" to "楽天式（推奨）",
+                        "wilder" to "ワイルダー式",
+                        "auto" to "自動比較",
+                    ).forEach { (value, label) ->
+                        FilterChip(
+                            selected = rsiMethod == value,
+                            onClick = { rsiMethod = value },
+                            label = { Text(label) },
+                        )
                     }
                 }
             }
@@ -3245,6 +3270,11 @@ private fun tradeDirectionLabel(direction: String): String =
     } else {
         "低い時に買う → 高い時に売る"
     }
+
+private fun rsiMethodLabel(method: String): String = when (method) {
+    "wilder" -> "ワイルダー式"
+    else -> "楽天式（単純平均）"
+}
 
 private fun evaluationModeLabel(mode: String, targetReturnPercent: Double): String =
     when (mode) {

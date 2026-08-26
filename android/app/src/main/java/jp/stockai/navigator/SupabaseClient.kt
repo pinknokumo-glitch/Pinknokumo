@@ -87,6 +87,7 @@ data class CloudScreeningRun(
     val targetReturnPercent: Double,
     val relaxationLabel: String?,
     val relaxationCounts: List<RelaxationCount>,
+    val rsiMethod: String,
     val updatedAt: Instant,
 )
 data class RelaxationCount(val stage: String, val hitCount: Int)
@@ -112,6 +113,7 @@ data class CloudPreference(
     val tradeDirection: String = "long",
     val evaluationMode: String = "condition_exit",
     val targetReturnPercent: Double = 5.0,
+    val rsiMethod: String = "rakuten",
 )
 
 class SupabaseClient(
@@ -203,7 +205,7 @@ class SupabaseClient(
                 "&select=mode,genre_id,manual_logic,manual_conditions,holding_days," +
                 "expectation_mode,expectation_genre_id,expectation_manual_logic," +
                 "expectation_manual_conditions,trade_direction," +
-                "expectation_evaluation_mode,target_return_percent&limit=1",
+                "expectation_evaluation_mode,target_return_percent,rsi_method&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
@@ -233,6 +235,7 @@ class SupabaseClient(
                 "expectation_evaluation_mode", "condition_exit"
             ),
             targetReturnPercent = row.optDouble("target_return_percent", 5.0),
+            rsiMethod = row.optString("rsi_method", "rakuten"),
         )
     }
 
@@ -260,6 +263,9 @@ class SupabaseClient(
         require(preference.targetReturnPercent > 0.0 &&
             preference.targetReturnPercent <= 100.0
         ) { "目標騰落率は0より大きく100以下で入力してください" }
+        require(preference.rsiMethod in setOf("auto", "rakuten", "wilder")) {
+            "RSI計算方式が不正です"
+        }
         val conditions = JSONArray().apply {
             preference.manualConditions.forEach { item ->
                 put(JSONObject().put("field", item.field).put("operator", item.operator).put("value", item.value))
@@ -284,6 +290,7 @@ class SupabaseClient(
             .put("trade_direction", preference.tradeDirection)
             .put("expectation_evaluation_mode", preference.evaluationMode)
             .put("target_return_percent", preference.targetReturnPercent)
+            .put("rsi_method", preference.rsiMethod)
             .put("updated_at", Instant.now().toString())
         requestArray(
             "POST", "/rest/v1/screening_preferences?on_conflict=user_id", payload, session.accessToken,
@@ -432,7 +439,7 @@ class SupabaseClient(
             "/rest/v1/screening_runs?user_id=eq.${session.userId}" +
                 "&select=screening_date,profile_name,holding_days,hit_count,condition_summary,updated_at" +
                 ",expectation_condition_summary,trade_direction,relaxation_label,relaxation_counts" +
-                ",expectation_evaluation_mode,target_return_percent" +
+                ",expectation_evaluation_mode,target_return_percent,rsi_method" +
                 "&order=updated_at.desc&limit=1",
             token = session.accessToken,
         )
@@ -453,6 +460,7 @@ class SupabaseClient(
                 "expectation_evaluation_mode", "condition_exit"
             ),
             targetReturnPercent = row.optDouble("target_return_percent", 5.0),
+            rsiMethod = row.optString("rsi_method", "rakuten"),
             relaxationLabel = row.optString("relaxation_label").takeIf { it.isNotEmpty() },
             relaxationCounts = (0 until relaxationCounts.length()).map { index ->
                 val item = relaxationCounts.getJSONObject(index)

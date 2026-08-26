@@ -22,18 +22,18 @@ class TechnicalAnalyzer:
             delta = close.diff()
             gain, loss = delta.clip(lower=0), -delta.clip(upper=0)
             for period in self._periods(rsi_cfg):
-                avg_gain = gain.ewm(
-                    alpha=1 / period, adjust=False, min_periods=period,
-                ).mean()
-                avg_loss = loss.ewm(
-                    alpha=1 / period, adjust=False, min_periods=period,
-                ).mean()
-                rsi = 100 - (100 / (1 + avg_gain / avg_loss.replace(0, pd.NA)))
-                rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
-                rsi = rsi.mask((avg_gain == 0) & (avg_loss > 0), 0.0)
-                frame[f"rsi_{period}"] = rsi.mask(
-                    (avg_gain == 0) & (avg_loss == 0), 50.0,
+                rakuten = self._rsi(
+                    gain.rolling(period, min_periods=period).mean(),
+                    loss.rolling(period, min_periods=period).mean(),
                 )
+                wilder = self._rsi(
+                    self._wilder_average(gain, period),
+                    self._wilder_average(loss, period),
+                )
+                frame[f"rsi_{period}_rakuten"] = rakuten
+                frame[f"rsi_{period}_wilder"] = wilder
+                # Existing rules remain compatible and match the user's broker app.
+                frame[f"rsi_{period}"] = rakuten
 
         macd_cfg = self.config["macd"]
         if macd_cfg["enabled"]:
@@ -123,6 +123,31 @@ class TechnicalAnalyzer:
         if not periods or any(period <= 0 for period in periods):
             raise ValueError("indicator periods must contain positive integers")
         return periods
+
+    @staticmethod
+    def _rsi(avg_gain: pd.Series, avg_loss: pd.Series) -> pd.Series:
+        rsi = 100 - (100 / (1 + avg_gain / avg_loss.replace(0, pd.NA)))
+        rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
+        rsi = rsi.mask((avg_gain == 0) & (avg_loss > 0), 0.0)
+        return rsi.mask((avg_gain == 0) & (avg_loss == 0), 50.0)
+
+    @staticmethod
+    def _wilder_average(values: pd.Series, period: int) -> pd.Series:
+        """Wilder smoothing seeded by the first period's simple average."""
+        output = pd.Series(index=values.index, dtype="float64")
+        if len(values) <= period:
+            return output
+        seed = values.iloc[1:period + 1].mean()
+        output.iloc[period] = seed
+        previous = seed
+        for position in range(period + 1, len(values)):
+            current = values.iloc[position]
+            if pd.isna(current) or pd.isna(previous):
+                previous = float("nan")
+            else:
+                previous = (previous * (period - 1) + current) / period
+            output.iloc[position] = previous
+        return output
 
     @staticmethod
     def _macd_presets(config: Mapping[str, object]) -> list[tuple[int, int, int]]:

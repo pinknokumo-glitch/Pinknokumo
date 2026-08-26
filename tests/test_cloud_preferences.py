@@ -155,6 +155,22 @@ class CloudPreferenceTestCase(unittest.TestCase):
                 self.options,
             )
 
+    def test_rsi_method_is_validated_and_defaults_to_rakuten(self) -> None:
+        default = CloudPreferenceClient.validate(
+            {"mode": "auto", "genre_id": "value"}, self.options
+        )
+        self.assertEqual(default.rsi_method, "rakuten")
+        automatic = CloudPreferenceClient.validate(
+            {"mode": "auto", "genre_id": "value", "rsi_method": "auto"},
+            self.options,
+        )
+        self.assertEqual(automatic.rsi_method, "auto")
+        with self.assertRaises(ValueError):
+            CloudPreferenceClient.validate(
+                {"mode": "auto", "genre_id": "value", "rsi_method": "other"},
+                self.options,
+            )
+
     def test_expectation_evaluation_mode_and_target_are_validated(self) -> None:
         default = CloudPreferenceClient.validate(
             {"mode": "auto", "genre_id": "value"}, self.options

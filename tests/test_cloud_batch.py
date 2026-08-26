@@ -3,6 +3,9 @@ from __future__ import annotations
 import unittest
 
 from modules.cloud_batch import (
+    _auto_rsi_rank,
+    _rule_for_rsi_method,
+    _snapshot_for_rsi_method,
     _codes_requiring_backtest,
     _estimated_price_fields,
     add_industry_benchmarks,
@@ -18,6 +21,40 @@ from tempfile import TemporaryDirectory
 
 
 class CloudBatchTests(unittest.TestCase):
+    def test_rsi_rule_and_snapshot_select_requested_method(self) -> None:
+        rule = {"all": [
+            {"field": "monthly.rsi_14", "operator": "<=", "value": 30},
+            {"field": "daily.close", "operator": ">=", "value_from": "daily.rsi_9"},
+            {"field": "weekly.rsi_14_previous", "operator": "<=", "value": 40},
+        ]}
+        selected = _rule_for_rsi_method(rule, "wilder")
+        self.assertEqual(selected["all"][0]["field"], "monthly.rsi_14_wilder")
+        self.assertEqual(selected["all"][1]["value_from"], "daily.rsi_9_wilder")
+        self.assertEqual(
+            selected["all"][2]["field"], "weekly.rsi_14_wilder_previous"
+        )
+        snapshot = _snapshot_for_rsi_method({
+            "daily.rsi_14": 10.0,
+            "daily.rsi_14_rakuten": 45.0,
+            "daily.rsi_14_wilder": 35.0,
+        }, "wilder")
+        self.assertEqual(snapshot["daily.rsi_14"], 35.0)
+
+    def test_auto_rsi_rank_prioritizes_out_of_sample_results(self) -> None:
+        rakuten = {"rsi_method": "rakuten", "pooled_backtest": {"market": {
+            "out_of_sample_trade_count": 50,
+            "out_of_sample_outcome_probability_percent": 55.0,
+            "out_of_sample_average_return_percent": 2.0,
+            "out_of_sample_win_rate_percent": 54.0,
+        }}}
+        wilder = {"rsi_method": "wilder", "pooled_backtest": {"market": {
+            "out_of_sample_trade_count": 40,
+            "out_of_sample_outcome_probability_percent": 60.0,
+            "out_of_sample_average_return_percent": 1.0,
+            "out_of_sample_win_rate_percent": 52.0,
+        }}}
+        self.assertEqual(max((rakuten, wilder), key=_auto_rsi_rank), wilder)
+
     def preference(self, user_id: str, holding_days: int = 60) -> ScreeningPreference:
         return ScreeningPreference(
             user_id=user_id,

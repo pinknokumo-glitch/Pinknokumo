@@ -126,6 +126,7 @@ create table if not exists public.screening_runs (
   target_return_percent double precision not null default 5.0,
   relaxation_label text,
   relaxation_counts jsonb not null default '[]'::jsonb,
+  rsi_method text not null default 'rakuten',
   hit_count integer not null check (hit_count >= 0),
   updated_at timestamptz not null default now()
 );
@@ -142,6 +143,8 @@ alter table public.screening_runs
 add column if not exists relaxation_label text;
 alter table public.screening_runs
 add column if not exists relaxation_counts jsonb not null default '[]'::jsonb;
+alter table public.screening_runs
+add column if not exists rsi_method text not null default 'rakuten';
 
 alter table public.screening_runs enable row level security;
 
