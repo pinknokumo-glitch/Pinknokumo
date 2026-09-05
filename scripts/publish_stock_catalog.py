@@ -26,10 +26,18 @@ def main() -> int:
     database = Database(ROOT / settings["database"]["path"])
     database.initialize()
     with database.connect() as connection:
+        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evening_analysis_codes'").fetchone():
+            print("Stock search catalog: awaiting evening snapshot")
+            return 0
         rows = connection.execute(
-            "SELECT code, company_name FROM master_stock ORDER BY code"
+            "SELECT m.code, m.company_name FROM master_stock m "
+            "JOIN evening_analysis_codes e ON e.code=m.code ORDER BY m.code"
         ).fetchall()
-    count = CloudStockCatalogPublisher(url, key).publish(rows)
+    run_id = os.getenv("EVENING_DATASET_RUN_ID", "").strip()
+    if not run_id:
+        print("Stock search catalog: preserved (only evening publishes snapshots)")
+        return 0
+    count = CloudStockCatalogPublisher(url, key).publish_snapshot(rows, run_id)
     print(json.dumps({"stock_search_catalog": {"published_count": count}}))
     return 0
 

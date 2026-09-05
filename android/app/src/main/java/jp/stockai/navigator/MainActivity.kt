@@ -43,6 +43,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -587,11 +589,13 @@ private fun StockAiApp(
             )
             "settings" -> ScreeningScreen(
                         initialSession = session,
+                        onSessionUpdated = onSessionUpdated,
                         onBack = { page = "home" },
                         onSelect = { selectedCode = it },
             )
             "stock" -> ScreeningScreen(
                 initialSession = session,
+                onSessionUpdated = onSessionUpdated,
                 initialPage = "stock",
                 onBack = { page = "home" },
                 onSelect = { selectedCode = it },
@@ -1899,6 +1903,7 @@ private fun RankingScreen(
 @Composable
 private fun ScreeningScreen(
     initialSession: SupabaseSession?,
+    onSessionUpdated: (SupabaseSession) -> Unit,
     initialPage: String = "home",
     onBack: () -> Unit,
     onSelect: (String) -> Unit,
@@ -2016,6 +2021,34 @@ private fun ScreeningScreen(
                     withContext(Dispatchers.IO) { cloud.loadBacktest(initialSession, it) }
                 }.getOrNull()
             }
+        }
+    }
+
+    LaunchedEffect(activeBacktestRequestId, cloudSession, settingsPage) {
+        val requestId = activeBacktestRequestId ?: return@LaunchedEffect
+        val session = cloudSession ?: return@LaunchedEffect
+        if (settingsPage != "stock") return@LaunchedEffect
+        while (true) {
+            try {
+                val authenticated = withContext(Dispatchers.IO) {
+                    cloud.withFreshSession(session) { cloud.loadBacktest(it, requestId) }
+                }
+                if (authenticated.session.accessToken != session.accessToken) {
+                    cloudSession = authenticated.session
+                    onSessionUpdated(authenticated.session)
+                }
+                val result = authenticated.value
+                requestedBacktest = result
+                if (result?.status == "complete" || result?.status == "failed") {
+                    cloudStatus = if (result.status == "complete") "分析が完了しました" else "分析に失敗しました"
+                    break
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                cloudStatus = "結果の接続を再確認しています: ${error.message}"
+            }
+            delay(15_000)
         }
     }
 
@@ -2709,7 +2742,7 @@ private fun ScreeningScreen(
                                     backtestRequestPreferences.edit()
                                         .putLong("request_${session.userId}", requestId)
                                         .apply()
-                                    cloudStatus = "バックテストを受け付けました。クラウド更新後にこの依頼の結果を確認できます。"
+                                    cloudStatus = "分析を受け付けました。起動待ち・計算に数分以上かかる場合があります。結果は自動表示します。"
                                     requestedBacktest = RequestedBacktest(
                                         requestId, specifiedCode, "pending", null, null,
                                         emptyList(), null, null, null, null, null, null,
@@ -2723,7 +2756,7 @@ private fun ScreeningScreen(
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("この銘柄をバックテスト") }
+                ) { Text("分析を開始") }
                 TextButton(
                     enabled = !cloudBusy,
                     onClick = {
@@ -2748,7 +2781,7 @@ private fun ScreeningScreen(
                         ) {
                             Text("銘柄: ${result.code} / 状態: ${backtestStatusLabel(result.status)}")
                             if (result.status == "pending" || result.status == "processing") {
-                                Text("次回のクラウド処理で計算します。完了後に「分析結果を更新」を押してください。")
+                                Text("夕方の取得データで分析しています。完了すると自動で結果が表示されます。画面を閉じても処理は継続します。")
                             }
                             result.referencePrice?.let { Text("基準株価: ${String.format("%,.2f円", it)}") }
                             result.holdingDays?.let { Text("検証期間: ${it}営業日") }

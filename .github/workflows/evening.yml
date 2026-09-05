@@ -54,3 +54,22 @@ jobs:
         with:
           path: data/stockai.db
           key: stockai-db-${{ github.run_id }}
+
+      - name: Save immutable evening analysis snapshot
+        uses: actions/cache/save@v5
+        with:
+          path: data/stockai.db
+          key: stockai-evening-analysis-${{ github.run_id }}
+
+      - name: Verify evening analysis snapshot is available
+        uses: actions/cache/restore@v5
+        with:
+          path: data/stockai.db
+          key: stockai-evening-analysis-${{ github.run_id }}
+          lookup-only: true
+          fail-on-cache-miss: true
+
+      - name: Publish fetched-stock search catalog
+        env:
+          EVENING_DATASET_RUN_ID: ${{ github.run_id }}
+        run: python scripts/publish_stock_catalog.py

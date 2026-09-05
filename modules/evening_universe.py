@@ -48,6 +48,16 @@ class EveningUniverseJob:
         usable = coverage >= minimum_coverage
         result["coverage_ratio"] = round(coverage, 4)
         result["usable"] = usable
+        if usable:
+            # Preserve the complete successfully fetched universe, not RSI candidates.
+            with self.database.connect() as connection:
+                connection.execute("CREATE TABLE IF NOT EXISTS evening_analysis_codes (code TEXT PRIMARY KEY)")
+                connection.execute("DELETE FROM evening_analysis_codes")
+                connection.executemany(
+                    "INSERT INTO evening_analysis_codes(code) VALUES (?)",
+                    [(code,) for code in refresh.pop("updated_codes", [])],
+                )
+            result.pop("updated_codes", None)
         status = (
             "success" if not refresh["failed"]
             else "success_with_warnings" if usable
@@ -98,6 +108,7 @@ class EveningUniverseJob:
                             "error": str(error),
                         })
         return {
+            "updated_codes": sorted({str(item["code"]) for item in updated if int(item.get("daily_rows", 0)) > 0}),
             "updated_count": len(updated),
             "failed_count": len(failed),
             "failed": failed,

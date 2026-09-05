@@ -61,7 +61,8 @@ def optional_target_percent(item: dict, field: str) -> float | None:
     return target
 
 
-def main() -> int:
+def main(request_id: str | None = None, dataset_run_id: str | None = None) -> int:
+    on_demand = request_id is not None
     url = os.getenv("SUPABASE_URL", "").strip()
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     if not url or not key:
@@ -69,18 +70,23 @@ def main() -> int:
         return 0
     screening = load_yaml("screening.yaml")
     options = ScreeningOptions(load_yaml("screening_options.yaml"), screening)
-    preferences = {
+    if request_id is not None and (not request_id.isdigit() or not (dataset_run_id or "").isdigit()):
+        raise ValueError("Invalid analysis request or dataset id")
+    preferences = {} if request_id else {
         item.user_id: item
         for item in CloudPreferenceClient(url, key).fetch_all(options)
     }
     pending = request(
         url, key, "GET",
-        "/rest/v1/backtest_requests?status=eq.pending&order=created_at.asc&limit=10",
+        (f"/rest/v1/backtest_requests?id=eq.{request_id}&status=eq.pending&limit=1"
+         if request_id else
+         "/rest/v1/backtest_requests?status=eq.pending&input_snapshot=is.null&order=created_at.asc&limit=10"),
     )
     settings = load_yaml("settings.yaml")
     database = Database(ROOT / settings["database"]["path"])
     database.initialize()
     processed = 0
+    failed = 0
     for item in pending:
         request_id = item["id"]
         user_id = str(item["user_id"])
@@ -89,7 +95,21 @@ def main() -> int:
         try:
             up_target_percent = optional_target_percent(item, "up_target_percent")
             down_target_percent = optional_target_percent(item, "down_target_percent")
-            preference = preferences[user_id]
+            if on_demand:
+                if item.get("dataset_run_id") != dataset_run_id:
+                    raise ValueError("Evening dataset does not match request")
+                preference = CloudPreferenceClient.validate(item["input_snapshot"], options)
+                with database.connect() as connection:
+                    if not connection.execute(
+                        "SELECT 1 FROM evening_analysis_codes WHERE code=?", (code,)
+                    ).fetchone():
+                        raise ValueError("銘柄が夕方取得データにありません")
+            else:
+                preference = preferences[user_id]
+            # Claim atomically so a workflow retry cannot compute the same request twice.
+            claimed = request(url, key, "PATCH", path + "&status=eq.pending", {"status": "processing"})
+            if not claimed:
+                continue
             entry_config, entry_profile = apply_preference(
                 preference, options, screening
             )
@@ -101,7 +121,6 @@ def main() -> int:
             # Keep every request isolated so a rapid second request for the same
             # code cannot replace the snapshot read by the first one.
             profile = f"requested_{request_id}_{preference_signature(preference)}"
-            request(url, key, "PATCH", path, {"status": "processing"})
             BatchBacktester(
                 database,
                 load_yaml("indicators.yaml"),
@@ -143,6 +162,7 @@ def main() -> int:
                         preference.expectation_evaluation_mode,
                     "target_return_percent": preference.target_return_percent,
                     "request_id": request_id,
+                    "dataset_run_id": item.get("dataset_run_id"),
                     "reference_price": (
                         float(prices.iloc[-1]["close"]) if not prices.empty else None
                     ),
@@ -152,14 +172,15 @@ def main() -> int:
             request(url, key, "PATCH", path, payload)
             processed += 1
         except Exception as error:
+            failed += 1
             request(url, key, "PATCH", path, {
                 "status": "failed",
                 "error_message": f"{type(error).__name__}: {error}",
             })
     print(json.dumps({"requested_backtests": {"processed_count": processed}}))
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(os.getenv("ANALYSIS_REQUEST_ID"), os.getenv("EVENING_DATASET_RUN_ID")))
 
