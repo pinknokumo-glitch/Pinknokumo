@@ -23,6 +23,8 @@ check (jsonb_array_length(expectation_manual_conditions) <= 128);
 create table if not exists public.screening_candidates (
   pool_date date not null,
   code text not null,
+  up_target_percent double precision,
+  down_target_percent double precision,
   updated_at timestamptz not null default now(),
   primary key (pool_date, code)
 );
