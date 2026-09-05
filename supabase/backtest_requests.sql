@@ -39,3 +39,4 @@ drop policy if exists "users create own backtest requests" on public.backtest_re
 create policy "users create own backtest requests"
 on public.backtest_requests for insert to authenticated
 with check ((select auth.uid()) = user_id);
+
