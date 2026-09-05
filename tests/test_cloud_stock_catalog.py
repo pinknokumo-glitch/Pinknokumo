@@ -9,6 +9,21 @@ from modules.cloud_stock_catalog import CloudStockCatalogPublisher
 
 
 class CloudStockCatalogPublisherTests(unittest.TestCase):
+    def test_snapshot_publishes_atomic_replacement_and_run_id(self):
+        response = MagicMock()
+        with patch("modules.cloud_stock_catalog.urlopen", return_value=response) as send:
+            count = CloudStockCatalogPublisher('https://test', 'test').publish_snapshot(
+                [{'code': '7203', 'company_name': 'トヨタ'}], '123')
+        self.assertEqual(count, 1)
+        self.assertTrue(send.call_args.args[0].full_url.endswith('/rpc/publish_evening_catalog'))
+        self.assertEqual(json.loads(send.call_args.args[0].data)['p_run_id'], '123')
+
+    def test_empty_snapshot_does_not_remove_existing_catalog(self):
+        with patch("modules.cloud_stock_catalog.urlopen") as send:
+            with self.assertRaises(ValueError):
+                CloudStockCatalogPublisher('https://test', 'test').publish_snapshot([], '123')
+        send.assert_not_called()
+
     def test_publish_normalizes_codes_and_uses_catalog_upsert(self) -> None:
         response = MagicMock()
         response.__enter__.return_value = response

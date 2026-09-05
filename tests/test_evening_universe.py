@@ -79,6 +79,7 @@ class EveningUniverseTests(unittest.TestCase):
         })
         self.job._refresh_prices = lambda codes: {
             "updated_count": 2, "failed_count": 1,
+            "updated_codes": ["11110", "22220"],
             "failed": [{"code": "33330"}],
         }
         self.job._build_pool = lambda codes, prefilter, failed_count: {
@@ -96,6 +97,10 @@ class EveningUniverseTests(unittest.TestCase):
                 "SELECT status FROM job_run ORDER BY id DESC LIMIT 1"
             ).fetchone()[0]
         self.assertEqual(status, "success_with_warnings")
+        with self.database.connect() as connection:
+            fetched = [row[0] for row in connection.execute('SELECT code FROM evening_analysis_codes ORDER BY code')]
+        self.assertEqual(fetched, ["11110", "22220"])
+        self.assertNotIn('updated_codes', result)
 
 
 if __name__ == "__main__":

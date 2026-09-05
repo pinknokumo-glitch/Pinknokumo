@@ -46,6 +46,23 @@ class CloudStockCatalogPublisher:
             raise RuntimeError(f"Could not publish stock search catalog: {detail}") from error
         return len(normalized)
 
+    def publish_snapshot(self, rows: Sequence[Mapping[str, object]], run_id: str) -> int:
+        if not run_id.isdigit() or not rows:
+            raise ValueError("Evening snapshot must have a run id and fetched stocks")
+        payload = {"p_run_id": run_id, "p_stocks": [
+            {"code": str(row["code"]), "company_name": str(row["company_name"] or "")}
+            for row in rows
+        ]}
+        headers = {"apikey": self.key, "Content-Type": "application/json"}
+        if self.key.startswith("eyJ"):
+            headers["Authorization"] = f"Bearer {self.key}"
+        req = Request(self.url + "/rest/v1/rpc/publish_evening_catalog",
+                      data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                      headers=headers, method="POST")
+        with urlopen(req, timeout=60):
+            pass
+        return len(rows)
+
     @staticmethod
     def _error_detail(error: HTTPError | URLError) -> str:
         if isinstance(error, HTTPError):

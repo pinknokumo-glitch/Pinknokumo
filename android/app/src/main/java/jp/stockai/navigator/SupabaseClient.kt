@@ -581,7 +581,7 @@ class SupabaseClient(
         val response = requestArray(
             "GET",
             "/rest/v1/stock_search_catalog?select=code,company_name&or=$filter" +
-                "&order=code.asc&limit=20",
+                "&available=eq.true&order=code.asc&limit=20",
             token = session.accessToken,
         )
         return (0 until response.length()).map { index ->
@@ -609,23 +609,21 @@ class SupabaseClient(
                 "値上がり幅・値下がり幅は0より大きく100以下で入力してください"
             }
         }
-        val response = requestArray(
+        val response = request(
             "POST",
-            "/rest/v1/backtest_requests",
+            "/rest/v1/rpc/start_stock_analysis",
             JSONObject()
-                .put("user_id", session.userId)
-                .put("code", normalized)
-                .put("up_target_percent", upTargetPercent ?: JSONObject.NULL)
-                .put("down_target_percent", downTargetPercent ?: JSONObject.NULL)
-                .put("status", "pending"),
+                .put("p_code", normalized)
+                .put("p_up", upTargetPercent ?: JSONObject.NULL)
+                .put("p_down", downTargetPercent ?: JSONObject.NULL),
             session.accessToken,
-            mapOf("Prefer" to "return=representation"),
         )
-        require(response.length() == 1) { "バックテスト依頼を登録できませんでした" }
-        return response.getJSONObject(0).getLong("id")
+        return response.getLong("id")
     }
 
     fun loadBacktest(session: SupabaseSession, requestId: Long): RequestedBacktest? {
+        requestText("POST", "/rest/v1/rpc/refresh_stock_analysis",
+            JSONObject().put("p_id", requestId).toString(), session.accessToken)
         val response = requestArray(
             "GET",
             "/rest/v1/backtest_requests?id=eq.$requestId&user_id=eq.${session.userId}" +
