@@ -568,6 +568,32 @@ class SupabaseClient(
         return CandidatePool(latestDate, codes, updatedAt)
     }
 
+    fun searchStockCatalog(session: SupabaseSession, query: String): List<StockSearchHit> {
+        val normalized = query.trim()
+        require(normalized.length >= 2) { "銘柄名またはコードを2文字以上入力してください" }
+        val escaped = normalized.filter {
+            it.isLetterOrDigit() || it == '　' || it == '・' || it == 'ー' || it == '－'
+        }
+        require(escaped.isNotBlank()) { "検索文字を入力してください" }
+        val filter = URLEncoder.encode(
+            "(code.ilike.*$escaped*,company_name.ilike.*$escaped*)", Charsets.UTF_8.name()
+        )
+        val response = requestArray(
+            "GET",
+            "/rest/v1/stock_search_catalog?select=code,company_name&or=$filter" +
+                "&order=code.asc&limit=20",
+            token = session.accessToken,
+        )
+        return (0 until response.length()).map { index ->
+            response.getJSONObject(index).let { row ->
+                StockSearchHit(
+                    code = row.getString("code"),
+                    companyName = row.optString("company_name"),
+                )
+            }
+        }
+    }
+
     fun requestBacktest(
         session: SupabaseSession,
         code: String,

@@ -1947,8 +1947,6 @@ private fun ScreeningScreen(
     var requestedBacktest by remember { mutableStateOf<RequestedBacktest?>(null) }
     var settingsPage by remember(initialPage) { mutableStateOf(initialPage) }
     var sortCategory by remember { mutableStateOf<String?>(null) }
-
-    var sortCategory by remember { mutableStateOf<String?>(null) }
     var expectationCategory by remember { mutableStateOf<String?>(null) }
     val expandedGroups = remember {
         mutableStateMapOf(
@@ -1963,6 +1961,9 @@ private fun ScreeningScreen(
         )
     }
     val context = LocalContext.current
+    val backtestRequestPreferences = remember(context) {
+        context.getSharedPreferences("stockai_backtest_requests", android.content.Context.MODE_PRIVATE)
+    }
     val focusManager = LocalFocusManager.current
     val notificationPreferences = remember {
         context.getSharedPreferences(
