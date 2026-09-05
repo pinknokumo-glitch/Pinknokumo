@@ -92,13 +92,37 @@ data class CloudScreeningRun(
 )
 data class RelaxationCount(val stage: String, val hitCount: Int)
 data class RequestedBacktest(
+    val id: Long,
     val code: String,
     val status: String,
     val score: Double?,
     val comment: String?,
     val prices: List<Price>,
     val errorMessage: String?,
+    val referencePrice: Double?,
+    val holdingDays: Int?,
+    val tradeCount: Int?,
+    val averageReturnPercent: Double?,
+    val winRatePercent: Double?,
+    val maxDrawdownPercent: Double?,
+    val upTargetPercent: Double?,
+    val downTargetPercent: Double?,
+    val upTargetProbabilityPercent: Double?,
+    val downTargetProbabilityPercent: Double?,
+    val medianSessionsToUpTarget: Double?,
+    val medianSessionsToDownTarget: Double?,
 )
+data class StockSearchHit(val code: String, val companyName: String)
+
+private fun JSONObject?.optionalDouble(name: String): Double? {
+    if (this == null || isNull(name)) return null
+    return optDouble(name).takeUnless { it.isNaN() || it.isInfinite() }
+}
+
+private fun JSONObject?.optionalInt(name: String): Int? {
+    if (this == null || isNull(name)) return null
+    return optInt(name)
+}
 
 data class CloudPreference(
     val mode: String,
@@ -544,37 +568,53 @@ class SupabaseClient(
         return CandidatePool(latestDate, codes, updatedAt)
     }
 
-    fun requestBacktest(session: SupabaseSession, code: String) {
+    fun requestBacktest(
+        session: SupabaseSession,
+        code: String,
+        upTargetPercent: Double?,
+        downTargetPercent: Double?,
+    ): Long {
         val normalized = code.trim().uppercase()
         require(normalized.matches(Regex("[0-9A-Z]{4,5}"))) {
             "銘柄コードを4～5文字で入力してください"
         }
-        requestArray(
+        for (target in listOf(upTargetPercent, downTargetPercent)) {
+            require(target == null || target in 0.0000001..100.0) {
+                "値上がり幅・値下がり幅は0より大きく100以下で入力してください"
+            }
+        }
+        val response = requestArray(
             "POST",
             "/rest/v1/backtest_requests",
             JSONObject()
                 .put("user_id", session.userId)
                 .put("code", normalized)
+                .put("up_target_percent", upTargetPercent ?: JSONObject.NULL)
+                .put("down_target_percent", downTargetPercent ?: JSONObject.NULL)
                 .put("status", "pending"),
             session.accessToken,
             mapOf("Prefer" to "return=representation"),
         )
+        require(response.length() == 1) { "バックテスト依頼を登録できませんでした" }
+        return response.getJSONObject(0).getLong("id")
     }
 
-    fun loadLatestBacktest(session: SupabaseSession): RequestedBacktest? {
+    fun loadBacktest(session: SupabaseSession, requestId: Long): RequestedBacktest? {
         val response = requestArray(
             "GET",
-            "/rest/v1/backtest_requests?user_id=eq.${session.userId}" +
-                "&select=code,status,result_json,error_message" +
-                "&order=created_at.desc&limit=1",
+            "/rest/v1/backtest_requests?id=eq.$requestId&user_id=eq.${session.userId}" +
+                "&select=id,code,status,result_json,error_message&limit=1",
             token = session.accessToken,
         )
         if (response.length() == 0) return null
         val row = response.getJSONObject(0)
         val result = row.optJSONObject("result_json")
         val expectation = result?.optJSONObject("expectation")
+        val summary = result?.optJSONObject("summary")
+        val targets = result?.optJSONObject("specified_targets")
         val prices = result?.optJSONArray("prices") ?: JSONArray()
         return RequestedBacktest(
+            id = row.getLong("id"),
             code = row.getString("code"),
             status = row.getString("status"),
             score = expectation?.optDouble("score")?.takeUnless { it.isNaN() },
@@ -584,6 +624,18 @@ class SupabaseClient(
                 Price(price.getString("date"), price.getDouble("close"))
             },
             errorMessage = row.optString("error_message").takeIf { it.isNotEmpty() },
+            referencePrice = result.optionalDouble("reference_price"),
+            holdingDays = result?.optInt("holding_days")?.takeIf { it > 0 },
+            tradeCount = summary.optionalInt("trade_count"),
+            averageReturnPercent = summary.optionalDouble("average_return_percent"),
+            winRatePercent = summary.optionalDouble("win_rate_percent"),
+            maxDrawdownPercent = summary.optionalDouble("max_drawdown_percent"),
+            upTargetPercent = targets.optionalDouble("up_target_percent"),
+            downTargetPercent = targets.optionalDouble("down_target_percent"),
+            upTargetProbabilityPercent = targets.optionalDouble("up_target_probability_percent"),
+            downTargetProbabilityPercent = targets.optionalDouble("down_target_probability_percent"),
+            medianSessionsToUpTarget = targets.optionalDouble("median_sessions_to_up_target"),
+            medianSessionsToDownTarget = targets.optionalDouble("median_sessions_to_down_target"),
         )
     }
 
