@@ -26,6 +26,10 @@ class Trade:
     sessions_held: int = 0
     profit_10_reached: bool = False
     profit_20_reached: bool = False
+    up_target_reached: bool | None = None
+    down_target_reached: bool | None = None
+    sessions_to_up_target: int | None = None
+    sessions_to_down_target: int | None = None
 
 class Backtester:
     def __init__(self, indicator_config: Mapping[str, object], backtest_config: Mapping[str, object]) -> None:
@@ -41,6 +45,8 @@ class Backtester:
         position_side: str = "long",
         evaluation_mode: str = "condition_exit",
         target_return_percent: float = 5.0,
+        up_target_percent: float | None = None,
+        down_target_percent: float | None = None,
     ) -> list[Trade]:
         self._ensure_supported_rule(rule)
         if exit_rule is not None:
@@ -61,6 +67,12 @@ class Backtester:
             raise ValueError(
                 "target_return_percent must be greater than 0 and at most 100"
             )
+        for name, value in (
+            ("up_target_percent", up_target_percent),
+            ("down_target_percent", down_target_percent),
+        ):
+            if value is not None and (value <= 0 or value > 100):
+                raise ValueError(f"{name} must be greater than 0 and at most 100")
         computed = self.analyzer.calculate(prices).reset_index(drop=True)
         signal_frame = self._add_timeframe_values(computed, timeframe_prices or {})
         signal_frame = self._add_fundamental_values(signal_frame, financials)
@@ -101,6 +113,12 @@ class Backtester:
                 ) / entry_price * 100
             profit_10_reached = maximum_favorable_return >= 10.0
             profit_20_reached = maximum_favorable_return >= 20.0
+            up_target_reached, sessions_to_up_target = self._price_target_hit(
+                maximum_path, entry_price, up_target_percent, "up"
+            )
+            down_target_reached, sessions_to_down_target = self._price_target_hit(
+                maximum_path, entry_price, down_target_percent, "down"
+            )
             if evaluation_mode == "within_period_up":
                 for candidate_index in range(entry_index, exit_index + 1):
                     candidate_close = float(computed.iloc[candidate_index]["close"])
@@ -168,8 +186,37 @@ class Backtester:
                 sessions_held=exit_index - entry_index + 1,
                 profit_10_reached=profit_10_reached,
                 profit_20_reached=profit_20_reached,
+                up_target_reached=up_target_reached,
+                down_target_reached=down_target_reached,
+                sessions_to_up_target=sessions_to_up_target,
+                sessions_to_down_target=sessions_to_down_target,
             ))
         return trades
+
+    @staticmethod
+    def _price_target_hit(
+        path: pd.DataFrame,
+        entry_price: float,
+        target_percent: float | None,
+        direction: str,
+    ) -> tuple[bool | None, int | None]:
+        """Return raw-price target reach and first observed session in the window.
+
+        These request-only bands deliberately describe the security's price movement,
+        independent of the saved long/short strategy and its target-return setting.
+        """
+        if target_percent is None:
+            return None, None
+        target_price = entry_price * (
+            1 + target_percent / 100 if direction == "up" else 1 - target_percent / 100
+        )
+        price_field = "high" if direction == "up" else "low"
+        for offset, value in enumerate(path[price_field], start=1):
+            if (direction == "up" and float(value) >= target_price) or (
+                direction == "down" and float(value) <= target_price
+            ):
+                return True, offset
+        return False, None
 
     @classmethod
     def _ensure_supported_rule(cls, rule: Mapping[str, object]) -> None:
@@ -235,6 +282,10 @@ class Backtester:
                 "median_sessions_to_outcome": None,
                 "profit_10_probability_percent": None,
                 "profit_20_probability_percent": None,
+                "up_target_probability_percent": None,
+                "down_target_probability_percent": None,
+                "median_sessions_to_up_target": None,
+                "median_sessions_to_down_target": None,
                 "out_of_sample_trade_count": 0,
                 "out_of_sample_average_return_percent": None,
                 "out_of_sample_win_rate_percent": None,
@@ -247,6 +298,10 @@ class Backtester:
         reached = frame.loc[frame["target_reached"]]
         out_of_sample_count = max(1, math.ceil(len(frame) * 0.2))
         out_of_sample = frame.tail(out_of_sample_count)
+        up_targets = frame.loc[frame["up_target_reached"].notna()]
+        down_targets = frame.loc[frame["down_target_reached"].notna()]
+        up_reached = up_targets.loc[up_targets["up_target_reached"]]
+        down_reached = down_targets.loc[down_targets["down_target_reached"]]
         return {
             "trade_count": len(frame),
             "average_return_percent": float(frame["return_percent"].mean()),
@@ -276,6 +331,22 @@ class Backtester:
             ),
             "profit_20_probability_percent": float(
                 frame["profit_20_reached"].mean() * 100
+            ),
+            "up_target_probability_percent": (
+                float(up_targets["up_target_reached"].mean() * 100)
+                if not up_targets.empty else None
+            ),
+            "down_target_probability_percent": (
+                float(down_targets["down_target_reached"].mean() * 100)
+                if not down_targets.empty else None
+            ),
+            "median_sessions_to_up_target": (
+                float(up_reached["sessions_to_up_target"].median())
+                if not up_reached.empty else None
+            ),
+            "median_sessions_to_down_target": (
+                float(down_reached["sessions_to_down_target"].median())
+                if not down_reached.empty else None
             ),
             # Chronological holdout: the newest 20% of trades are kept separate
             # from the earlier observations. This is not a promise of future
@@ -340,3 +411,4 @@ class Backtester:
             if indicator.startswith(("rsi_", "macd", "sma_", "adx_", "atr_", "stoch_")):
                 values[f"{prefix}.{indicator}_previous"] = value
         return values
+
