@@ -493,6 +493,193 @@ private fun StockAiApp(
     onSessionUpdated: (SupabaseSession) -> Unit,
     onLogout: () -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var authMode by remember { mutableStateOf("login") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var information by remember { mutableStateOf<String?>(null) }
+    var showPassword by remember { mutableStateOf(false) }
+    var showPolicy by remember { mutableStateOf(false) }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("StockAI Navigator") }) }) { padding ->
+        Column(
+            Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("ログイン", style = MaterialTheme.typography.headlineSmall)
+            Text("クラウド設定と配信結果を安全に同期します。")
+            storedSession?.let { saved ->
+                Button(
+                    enabled = !busy,
+                    onClick = {
+                        busy = true
+                        error = null
+                        information = null
+                        scope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    if (saved.needsRefresh()) cloud.refreshSession(saved) else saved
+                                }
+                            }.onSuccess(onAuthenticated)
+                                .onFailure {
+                                    error = "保存済みログインの有効期限が切れました。再ログインしてください。"
+                                }
+                            busy = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("${saved.email} でログイン") }
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        onForgetStoredSession()
+                        error = null
+                        information = "保存済みログインを解除しました。"
+                    },
+                    modifier = Modifier.align(Alignment.End),
+                ) { Text("別のアカウントを使う") }
+                HorizontalDivider()
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilterChip(
+                    selected = authMode == "login",
+                    onClick = {
+                        authMode = "login"
+                        error = null
+                        information = null
+                    },
+                    label = { Text("ログイン") },
+                )
+                FilterChip(
+                    selected = authMode == "register",
+                    onClick = {
+                        authMode = "register"
+                        error = null
+                        information = null
+                    },
+                    label = { Text("新規登録") },
+                )
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            information?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            OutlinedTextField(
+                value = email, onValueChange = { email = it },
+                label = { Text("メール") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = password, onValueChange = { password = it },
+                label = { Text("パスワード") },
+                visualTransformation = if (showPassword) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = {
+                    TextButton(onClick = { showPassword = !showPassword }) {
+                        Text(if (showPassword) "隠す" else "表示")
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (authMode == "register") {
+                OutlinedTextField(
+                    value = confirmPassword, onValueChange = { confirmPassword = it },
+                    label = { Text("パスワード（確認）") },
+                    visualTransformation = if (showPassword) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Button(
+                enabled = !busy && email.isNotBlank() && password.isNotBlank(),
+                onClick = {
+                    focusManager.clearFocus()
+                    busy = true
+                    error = null
+                    information = null
+                    scope.launch {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                if (authMode == "register") {
+                                    require(password == confirmPassword) { "確認用パスワードが一致しません" }
+                                    cloud.signUp(email, password).session
+                                } else {
+                                    cloud.signIn(email, password)
+                                }
+                            }
+                        }.onSuccess { authenticated ->
+                            if (authenticated == null) {
+                                information =
+                                    "登録確認メールを送信しました。メール内のリンクを開いた後、この画面からログインしてください。"
+                                authMode = "login"
+                            } else {
+                                onAuthenticated(authenticated)
+                            }
+                        }
+                            .onFailure { error = it.message ?: "ログインできませんでした" }
+                        password = ""
+                        confirmPassword = ""
+                        busy = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (busy) "処理中" else if (authMode == "register") "登録" else "ログイン") }
+            TextButton(
+                onClick = { showPolicy = !showPolicy },
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text(if (showPolicy) "プライバシー・免責事項を閉じる" else "プライバシー・免責事項")
+            }
+            if (showPolicy) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("認証", fontWeight = FontWeight.Bold)
+                        Text("認証にはSupabaseを利用します。パスワードをアプリ独自のデータベースへ保存しません。")
+                        Text("設定データ", fontWeight = FontWeight.Bold)
+                        Text("ソート条件・期待値条件・分析依頼はログインユーザーごとに分離して保存します。")
+                        Text("免責事項", fontWeight = FontWeight.Bold)
+                        Text("本アプリの情報は投資助言ではなく、将来の利益を保証しません。最終判断は利用者自身で行ってください。")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StockAiApp(
+    session: SupabaseSession,
+    initialPage: String = "home",
+    requiresOnboarding: Boolean,
+    onOnboardingCompleted: () -> Unit,
+    onSessionUpdated: (SupabaseSession) -> Unit,
+    onLogout: () -> Unit,
+) {
     val context = LocalContext.current
     val favoriteStore = remember(session.userId) {
         FavoriteStore(context.applicationContext, session.userId)
@@ -1936,6 +2123,11 @@ private fun ScreeningScreen(
     var loginError by remember { mutableStateOf<String?>(null) }
     var cloudBusy by remember { mutableStateOf(false) }
     var specifiedCode by remember { mutableStateOf("") }
+    var specifiedQuery by remember { mutableStateOf("") }
+    var stockSearchResults by remember { mutableStateOf<List<StockSearchHit>>(emptyList()) }
+    var upTargetPercent by remember { mutableStateOf("") }
+    var downTargetPercent by remember { mutableStateOf("") }
+    var activeBacktestRequestId by remember { mutableStateOf<Long?>(null) }
     var requestedBacktest by remember { mutableStateOf<RequestedBacktest?>(null) }
     var settingsPage by remember(initialPage) { mutableStateOf(initialPage) }
     var sortCategory by remember { mutableStateOf<String?>(null) }
@@ -1996,9 +2188,15 @@ private fun ScreeningScreen(
         if (initialSession != null) {
             cloudSession = initialSession
             cloudStatus = "メール確認が完了しました。クラウド設定を保存できます。"
-            requestedBacktest = runCatching {
-                withContext(Dispatchers.IO) { cloud.loadLatestBacktest(initialSession) }
-            }.getOrNull()
+            val requestId = backtestRequestPreferences.getLong(
+                "request_${initialSession.userId}", 0L
+            ).takeIf { it > 0 }
+            activeBacktestRequestId = requestId
+            requestedBacktest = requestId?.let {
+                runCatching {
+                    withContext(Dispatchers.IO) { cloud.loadBacktest(initialSession, it) }
+                }.getOrNull()
+            }
         }
     }
 
@@ -2052,6 +2250,16 @@ private fun ScreeningScreen(
             targetReturnPercent = resolvedTarget,
             rsiMethod = rsiMethod,
         )
+    }
+
+    fun optionalSpecifiedTarget(value: String, label: String): Double? {
+        if (value.isBlank()) return null
+        val target = value.toDoubleOrNull()
+            ?: throw IllegalArgumentException("${label}を数値で入力してください")
+        require(target > 0.0 && target <= 100.0) {
+            "${label}は0より大きく100以下で入力してください"
+        }
+        return target
     }
 
     fun saveNotificationSettings(): Boolean {
@@ -2259,6 +2467,324 @@ private fun ScreeningScreen(
                         enabled = !cloudBusy,
                         onClick = {
                             if (settingsPage == "notifications") {
+                                saveNotificationSettings()
+                            } else {
+                                triggerSave()
+                            }
+                        },
+                    ) { Text("保存") }
+                }
+                TextButton(onClick = { refreshToken++ }) { Text("更新") }
+            },
+        )
+    }) { padding ->
+        LazyColumn(Modifier.padding(padding).padding(16.dp)) {
+            if (settingsPage == "home") item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PanelButton("✓", if (cloudBusy) "保存中" else "すべての設定を保存",
+                        Modifier.fillMaxWidth().height(120.dp)) {
+                        if (!cloudBusy) triggerSave()
+                    }
+                    PanelButton("⇅", "ソート条件",
+                        Modifier.fillMaxWidth().height(120.dp)) { settingsPage = "sort_mode" }
+                    PanelButton("◎", "期待値条件",
+                        Modifier.fillMaxWidth().height(120.dp)) { settingsPage = "expect_mode" }
+                    PanelButton("♢", "通知設定",
+                        Modifier.fillMaxWidth().height(120.dp)) { settingsPage = "notifications" }
+                }
+            }
+            if (settingsPage == "sort_mode") item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PanelButton("A", "オート",
+                        Modifier.fillMaxWidth().height(160.dp)) {
+                        mode = "auto"
+                        settingsPage = "sort_auto"
+                    }
+                    PanelButton("M", "マニュアル",
+                        Modifier.fillMaxWidth().height(160.dp)) {
+                        mode = "manual"
+                        sortCategory = null
+                        settingsPage = "sort_manual"
+                    }
+                }
+            }
+            if (settingsPage in setOf("sort_auto", "sort_manual")) item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("RSI計算方式", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "楽天式は楽天証券の表示と合わせます。自動は全銘柄の検証期間外成績で2方式を比較します。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    listOf(
+                        "rakuten" to "楽天式（推奨）",
+                        "wilder" to "ワイルダー式",
+                        "auto" to "自動比較",
+                    ).forEach { (value, label) ->
+                        FilterChip(
+                            selected = rsiMethod == value,
+                            onClick = { rsiMethod = value },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+            if (settingsPage == "sort_auto") {
+                options?.genres?.forEach { genre ->
+                    item {
+                        FilterChip(
+                            selected = genreId == genre.id,
+                            onClick = { genreId = genre.id },
+                            label = { Text(genre.label) },
+                        )
+                        Text(genre.description, style = MaterialTheme.typography.bodySmall)
+                        if (genre.evidenceStatus == "needs_validation") {
+                            Text("検証中", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+            if (settingsPage == "sort_manual" && sortCategory == null) item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PanelButton("⌁", "テクニカル",
+                        Modifier.fillMaxWidth().height(160.dp)) { sortCategory = "technical" }
+                    PanelButton("￥", "ファンダメンタル",
+                        Modifier.fillMaxWidth().height(160.dp)) { sortCategory = "fundamental" }
+                }
+            }
+            if (settingsPage == "sort_manual" && sortCategory != null) {
+                item {
+                    Text(
+                        "${if (sortCategory == "technical") "テクニカル" else "ファンダメンタル"}条件（入力項目をANDで使用）",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (sortCategory == "technical") {
+                        Text(
+                            "短期・標準・長期は別々の条件として入力できます。空欄の期間は判定に使用しません。",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                if (sortCategory == "technical") {
+                    listOf("daily" to "日足", "weekly" to "週足", "monthly" to "月足").forEach { (prefix, label) ->
+                        item {
+                            ConditionFieldsPanel(
+                                label,
+                                options?.manualFields.orEmpty().filter { it.field.startsWith("$prefix.") },
+                                manualValues,
+                                manualOperators,
+                                expandedGroups["sort_$prefix"] == true,
+                            ) {
+                                expandedGroups["sort_$prefix"] =
+                                    expandedGroups["sort_$prefix"] != true
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        ConditionFieldsPanel(
+                            "ファンダメンタル",
+                            options?.manualFields.orEmpty().filter { it.category == "fundamental" },
+                            manualValues,
+                            manualOperators,
+                            expandedGroups["sort_fundamental"] == true,
+                        ) {
+                            expandedGroups["sort_fundamental"] =
+                                expandedGroups["sort_fundamental"] != true
+                        }
+                    }
+                }
+                item { Button(onClick = { refreshToken++ }) { Text("条件をプレビュー") } }
+            }
+            if (settingsPage == "expect_mode") item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PanelButton("A", "オート",
+                        Modifier.fillMaxWidth().height(160.dp)) {
+                        expectationMode = "auto"
+                        settingsPage = "expect_auto"
+                    }
+                    PanelButton("M", "マニュアル",
+                        Modifier.fillMaxWidth().height(160.dp)) {
+                        expectationMode = "manual"
+                        expectationCategory = null
+                        settingsPage = "expect_manual"
+                    }
+                }
+            }
+            if (settingsPage in setOf("expect_auto", "expect_manual")) item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("売買方向", style = MaterialTheme.typography.titleMedium)
+                    FilterChip(
+                        selected = tradeDirection == "long",
+                        onClick = { tradeDirection = "long" },
+                        label = { Text("低い時に買う → 高い時に売る") },
+                    )
+                    FilterChip(
+                        selected = tradeDirection == "short",
+                        onClick = { tradeDirection = "short" },
+                        label = { Text("高い時に売る → 低い時に買い戻す") },
+                    )
+                    Text(
+                        if (tradeDirection == "long") {
+                            "ソート条件を買いの入口、期待値条件を売りの出口として検証します。"
+                        } else {
+                            "ソート条件を空売りの入口、期待値条件を買い戻しの出口として検証します。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text("期待値の判定方式", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "営業日数は条件を監視する最大期間です。条件が設定されている場合は" +
+                            "期間内の初回達成時に決済し、条件がない場合だけ期間最終日に決済します。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    FilterChip(
+                        selected = evaluationMode == "within_period_up",
+                        onClick = { evaluationMode = "within_period_up" },
+                        label = { Text("期間内に配信価格を一度でも上回る／下回る") },
+                    )
+                    FilterChip(
+                        selected = evaluationMode == "target_return",
+                        onClick = { evaluationMode = "target_return" },
+                        label = { Text("期間内に目標騰落率へ到達") },
+                    )
+                    FilterChip(
+                        selected = evaluationMode == "condition_exit",
+                        onClick = { evaluationMode = "condition_exit" },
+                        label = { Text("期待値条件へ到達") },
+                    )
+                    if (evaluationMode == "target_return") {
+                        OutlinedTextField(
+                            value = targetReturnPercent,
+                            onValueChange = {
+                                targetReturnPercent = it.filter { char ->
+                                    char.isDigit() || char == '.'
+                                }.take(6)
+                            },
+                            label = { Text("目標騰落率（%）") },
+                            supportingText = {
+                                Text("買いは値上がり率、空売りは値下がり率として判定します。")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+                    if (tradeDirection == "short") {
+                        Text(
+                            "空売り可能銘柄の制限、貸株料、逆日歩、売買手数料、スリッページは現在の参考計算に含みません。",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    OutlinedTextField(
+                        value = holdingDays,
+                        onValueChange = { holdingDays = it.filter(Char::isDigit).take(4) },
+                        label = { Text("検証期間（営業日）") },
+                        supportingText = {
+                            Text("選択した結果が何日以内に起きるかを調べます（1～1000営業日）。")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+            }
+            if (settingsPage == "expect_auto") {
+                options?.genres?.forEach { genre ->
+                    item {
+                        FilterChip(
+                            selected = expectationGenreId == genre.id,
+                            onClick = { expectationGenreId = genre.id },
+                            label = { Text(genre.label) },
+                        )
+                        Text(genre.description, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            if (settingsPage == "expect_manual") {
+                if (expectationCategory == null) item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PanelButton("⌁", "テクニカル",
+                            Modifier.fillMaxWidth().height(160.dp)) {
+                            expectationCategory = "technical"
+                        }
+                        PanelButton("￥", "ファンダメンタル",
+                            Modifier.fillMaxWidth().height(160.dp)) {
+                            expectationCategory = "fundamental"
+                        }
+                    }
+                }
+            }
+            if (settingsPage == "expect_manual" && expectationCategory != null) {
+                item {
+                    Text(
+                        "${if (expectationCategory == "technical") "テクニカル" else "ファンダメンタル"}期待値条件（入力項目をANDで使用）",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (expectationCategory == "technical") {
+                        Text(
+                            "期間内に達成させたい短期・標準・長期の条件だけ入力してください。",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                if (expectationCategory == "technical") {
+                    listOf("daily" to "日足", "weekly" to "週足", "monthly" to "月足").forEach { (prefix, label) ->
+                        item {
+                            ConditionFieldsPanel(
+                                label,
+                                options?.manualFields.orEmpty().filter { it.field.startsWith("$prefix.") },
+                                expectationManualValues,
+                                expectationManualOperators,
+                                expandedGroups["expect_$prefix"] == true,
+                            ) {
+                                expandedGroups["expect_$prefix"] =
+                                    expandedGroups["expect_$prefix"] != true
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        ConditionFieldsPanel(
+                            "ファンダメンタル",
+                            options?.manualFields.orEmpty().filter { it.category == "fundamental" },
+                            expectationManualValues,
+                            expectationManualOperators,
+                            expandedGroups["expect_fundamental"] == true,
+                        ) {
+                            expandedGroups["expect_fundamental"] =
+                                expandedGroups["expect_fundamental"] != true
+                        }
+                    }
+                }
+            }
+            if (settingsPage == "stock") item {
+                Spacer(Modifier.height(24.dp))
+                Text("指定銘柄の期待値分析", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "現在の期待値条件を保存し、最新チャートを使ったバックテストをクラウドへ依頼します。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(
+                        onClick = {
+                            expectationMode = "manual"
+                            expectationCategory = "technical"
+                            settingsPage = "expect_manual"
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("テクニカル条件") }
+                    Button(
+                        onClick = {
+                            expectationMode = "manual"
+                            expectationCategory = "fundamental"
+                            settingsPage = "expect_manual"
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("ファンダメンタル条件") }
+                }
+            if (settingsPage == "notifications") {
                                 saveNotificationSettings()
                             } else {
                                 triggerSave()
