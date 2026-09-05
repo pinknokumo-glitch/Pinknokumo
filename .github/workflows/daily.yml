@@ -46,6 +46,9 @@ jobs:
       - name: Initialize stock universe
         run: python scripts/bootstrap_cloud.py
 
+      - name: Publish stock search catalog
+        run: python scripts/publish_stock_catalog.py
+
       - name: Update, analyze, and publish app results
         run: python scripts/run_daily_pipeline.py --candidate-pool --skip-backtest --backtest-matches
 
