@@ -234,6 +234,52 @@ class BacktestPointInTimeTestCase(unittest.TestCase):
         self.assertEqual(summary["profit_10_probability_percent"], 100.0)
         self.assertEqual(summary["profit_20_probability_percent"], 100.0)
 
+    def test_requested_up_and_down_targets_are_evaluated_independently(self) -> None:
+        daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
+        daily["open"] = [80.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+        daily["close"] = daily["open"]
+        daily["high"] = [81.0, 102.0, 106.0, 104.0, 103.0, 102.0]
+        daily["low"] = [79.0, 98.0, 97.0, 91.0, 96.0, 97.0]
+
+        trades = self.backtester.run(
+            daily,
+            {"field": "daily.close", "operator": "<=", "value": 80},
+            holding_days=4,
+            evaluation_mode="period_end",
+            up_target_percent=5.0,
+            down_target_percent=8.0,
+        )
+        summary = self.backtester.summarize(trades)
+
+        self.assertTrue(trades[0].up_target_reached)
+        self.assertTrue(trades[0].down_target_reached)
+        self.assertEqual(trades[0].sessions_to_up_target, 2)
+        self.assertEqual(trades[0].sessions_to_down_target, 3)
+        self.assertEqual(summary["up_target_probability_percent"], 100.0)
+        self.assertEqual(summary["down_target_probability_percent"], 100.0)
+
+    def test_requested_targets_allow_one_side_and_reject_invalid_values(self) -> None:
+        daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
+        daily["open"] = [80.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+        daily["close"] = daily["open"]
+        daily["high"] = [81.0, 101.0, 102.0, 103.0, 104.0, 105.0]
+        daily["low"] = daily["close"] - 1
+        trades = self.backtester.run(
+            daily,
+            {"field": "daily.close", "operator": "<=", "value": 80},
+            holding_days=4,
+            down_target_percent=5.0,
+        )
+        self.assertIsNone(trades[0].up_target_reached)
+        self.assertFalse(trades[0].down_target_reached)
+        with self.assertRaisesRegex(ValueError, "up_target_percent"):
+            self.backtester.run(
+                daily,
+                {"field": "daily.close", "operator": "<=", "value": 80},
+                holding_days=4,
+                up_target_percent=0.0,
+            )
+
     def test_short_target_probability_uses_intraday_low(self) -> None:
         daily = prices([f"2026-01-0{day}" for day in range(1, 7)])
         daily["open"] = [120.0, 100.0, 99.0, 98.0, 97.0, 96.0]
@@ -270,3 +316,4 @@ class BacktestPointInTimeTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

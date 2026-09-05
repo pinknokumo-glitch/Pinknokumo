@@ -118,8 +118,12 @@ Preference writes remain restricted by RLS.
    `supabase/outcome_probability_upgrade.sql` once. It is rerunnable and adds the
    probabilities of reaching 10% and 20% unrealized profit within the configured
    maximum number of business days.
-13. Insert the initial preference while authenticated, or use the dashboard for the first row.
-14. Register the three server values above as GitHub Actions secrets.
+13. Existing projects upgrading to specified-stock analysis must run
+   `supabase/specified_stock_analysis_upgrade.sql` once. It adds optional independent
+   up/down target bands to requested backtests and the read-only stock search catalog.
+   The daily workflow publishes the catalog from the existing stock master.
+14. Insert the initial preference while authenticated, or use the dashboard for the first row.
+15. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
 # Long-horizon expectation backtests

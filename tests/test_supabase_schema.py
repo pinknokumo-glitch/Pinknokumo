@@ -65,6 +65,22 @@ class SupabaseSchemaTests(unittest.TestCase):
             sql,
         )
 
+    def test_specified_stock_analysis_upgrade_adds_bounded_targets_and_catalog(self) -> None:
+        sql = compact_sql("specified_stock_analysis_upgrade.sql")
+        expected = (
+            "add column if not exists up_target_percent double precision;",
+            "add column if not exists down_target_percent double precision;",
+            "up_target_percent is null or up_target_percent > 0 and up_target_percent <= 100",
+            "down_target_percent is null or down_target_percent > 0 and down_target_percent <= 100",
+            "create table if not exists public.stock_search_catalog",
+            "grant select on table public.stock_search_catalog to authenticated;",
+            "grant select, insert, update on table public.stock_search_catalog to service_role;",
+        )
+        for statement in expected:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, sql)
+        self.assertNotIn("delete from", sql)
+
     def test_combined_upgrade_contains_runtime_grants(self) -> None:
         sql = compact_sql("multi_user_upgrade.sql")
         expected = (

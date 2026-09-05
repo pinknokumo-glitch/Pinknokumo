@@ -51,6 +51,16 @@ def request(url: str, key: str, method: str, path: str, payload=None):
     return json.loads(body) if body else []
 
 
+def optional_target_percent(item: dict, field: str) -> float | None:
+    value = item.get(field)
+    if value is None or value == "":
+        return None
+    target = float(value)
+    if not 0 < target <= 100:
+        raise ValueError(f"{field} must be greater than 0 and at most 100")
+    return target
+
+
 def main() -> int:
     url = os.getenv("SUPABASE_URL", "").strip()
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
@@ -77,6 +87,8 @@ def main() -> int:
         code = str(item["code"]).strip().upper()
         path = f"/rest/v1/backtest_requests?id=eq.{quote(str(request_id))}"
         try:
+            up_target_percent = optional_target_percent(item, "up_target_percent")
+            down_target_percent = optional_target_percent(item, "down_target_percent")
             preference = preferences[user_id]
             entry_config, entry_profile = apply_preference(
                 preference, options, screening
@@ -86,7 +98,9 @@ def main() -> int:
             )
             entry_rule = entry_config["profiles"][entry_profile]
             exit_rule = exit_config["profiles"][expectation_profile]
-            profile = f"requested_{preference_signature(preference)}"
+            # Keep every request isolated so a rapid second request for the same
+            # code cannot replace the snapshot read by the first one.
+            profile = f"requested_{request_id}_{preference_signature(preference)}"
             request(url, key, "PATCH", path, {"status": "processing"})
             BatchBacktester(
                 database,
@@ -102,6 +116,8 @@ def main() -> int:
                 position_side=preference.trade_direction,
                 evaluation_mode=preference.expectation_evaluation_mode,
                 target_return_percent=preference.target_return_percent,
+                up_target_percent=up_target_percent,
+                down_target_percent=down_target_percent,
             )
             with database.connect() as connection:
                 result = StockRepository(connection).latest_backtest_result(code, profile)
@@ -126,6 +142,10 @@ def main() -> int:
                     "expectation_evaluation_mode":
                         preference.expectation_evaluation_mode,
                     "target_return_percent": preference.target_return_percent,
+                    "request_id": request_id,
+                    "reference_price": (
+                        float(prices.iloc[-1]["close"]) if not prices.empty else None
+                    ),
                 },
                 "error_message": None,
             }
@@ -142,3 +162,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

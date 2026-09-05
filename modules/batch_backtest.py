@@ -32,6 +32,8 @@ class BatchBacktester:
         position_side: str = "long",
         evaluation_mode: str = "condition_exit",
         target_return_percent: float = 5.0,
+        up_target_percent: float | None = None,
+        down_target_percent: float | None = None,
     ) -> dict[str, object]:
         if codes is None:
             with self.db.connect() as conn:
@@ -69,6 +71,8 @@ class BatchBacktester:
                     position_side=position_side,
                     evaluation_mode=evaluation_mode,
                     target_return_percent=target_return_percent,
+                    up_target_percent=up_target_percent,
+                    down_target_percent=down_target_percent,
                 )
                 summary = self.backtester.summarize(trades)
                 expectation = self.scorer.score(summary)
@@ -77,6 +81,14 @@ class BatchBacktester:
                     "position_side": position_side,
                     "evaluation_mode": evaluation_mode,
                     "target_return_percent": target_return_percent,
+                    "specified_targets": {
+                        "up_target_percent": up_target_percent,
+                        "down_target_percent": down_target_percent,
+                        "up_target_probability_percent": summary["up_target_probability_percent"],
+                        "down_target_probability_percent": summary["down_target_probability_percent"],
+                        "median_sessions_to_up_target": summary["median_sessions_to_up_target"],
+                        "median_sessions_to_down_target": summary["median_sessions_to_down_target"],
+                    },
                     "entry_rule": rule,
                     "exit_rule": exit_rule,
                     "summary": summary, "expectation": expectation,
@@ -98,3 +110,4 @@ class BatchBacktester:
             "profile": profile_name, "processed_count": len(completed), "failed_count": len(failed),
             "results": sorted(completed, key=lambda item: item["score"], reverse=True), "failed": failed,
         }
+
