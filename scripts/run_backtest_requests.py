@@ -24,6 +24,9 @@ from modules.cloud_preferences import (  # noqa: E402
 from modules.database import Database  # noqa: E402
 from modules.repository import StockRepository  # noqa: E402
 from modules.screening_options import ScreeningOptions  # noqa: E402
+from modules.specified_analysis import analyze  # noqa: E402
+from modules.screener import Screener  # noqa: E402
+from modules.ai_comment import AnalysisCommentary  # noqa: E402
 
 
 def load_yaml(name: str) -> dict:
@@ -98,7 +101,9 @@ def main(request_id: str | None = None, dataset_run_id: str | None = None) -> in
             if on_demand:
                 if item.get("dataset_run_id") != dataset_run_id:
                     raise ValueError("Evening dataset does not match request")
-                preference = CloudPreferenceClient.validate(item["input_snapshot"], options)
+                independent = item.get("input_snapshot", {}).get("analysis_mode") == "independent"
+                if not independent:
+                    preference = CloudPreferenceClient.validate(item["input_snapshot"], options)
                 with database.connect() as connection:
                     if not connection.execute(
                         "SELECT 1 FROM evening_analysis_codes WHERE code=?", (code,)
@@ -109,6 +114,23 @@ def main(request_id: str | None = None, dataset_run_id: str | None = None) -> in
             # Claim atomically so a workflow retry cannot compute the same request twice.
             claimed = request(url, key, "PATCH", path + "&status=eq.pending", {"status": "processing"})
             if not claimed:
+                continue
+            if on_demand and independent:
+                with database.connect() as connection:
+                    prices = pd.read_sql_query(
+                        "SELECT trade_date, close, high, low FROM price_daily WHERE code=? ORDER BY trade_date",
+                        connection, params=[code],
+                    )
+                    result = analyze(prices, item["input_snapshot"]["holding_days"],
+                                     up_target_percent, down_target_percent, load_yaml("scoring.yaml"))
+                    values = Screener(connection, load_yaml("indicators.yaml"), screening,
+                                      candidate_codes=[code]).snapshots()[0]
+                    master = connection.execute("SELECT company_name FROM master_stock WHERE code=?", (code,)).fetchone()
+                    result["company_name"] = master[0] if master else code
+                    result["comment"] = AnalysisCommentary.integrated_comment(values, result["comment"])
+                result.update(code=code, request_id=request_id, dataset_run_id=dataset_run_id)
+                request(url, key, "PATCH", path, {"status": "complete", "result_json": result, "error_message": None})
+                processed += 1
                 continue
             entry_config, entry_profile = apply_preference(
                 preference, options, screening

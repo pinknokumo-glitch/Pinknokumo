@@ -2,6 +2,8 @@
 
 package jp.stockai.navigator
 
+import androidx.compose.runtime.saveable.rememberSaveable
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -1947,6 +1949,8 @@ private fun ScreeningScreen(
     var specifiedQuery by remember { mutableStateOf("") }
     var stockSearchResults by remember { mutableStateOf<List<StockSearchHit>>(emptyList()) }
     var upTargetPercent by remember { mutableStateOf("") }
+    var specifiedDays by rememberSaveable { mutableStateOf("60") }
+    var specifiedDetails by remember { mutableStateOf(false) }
     var downTargetPercent by remember { mutableStateOf("") }
     var activeBacktestRequestId by remember { mutableStateOf<Long?>(null) }
     var requestedBacktest by remember { mutableStateOf<RequestedBacktest?>(null) }
@@ -2716,8 +2720,16 @@ private fun ScreeningScreen(
                     )
                 }
                 Text(
-                    "空欄なら現在の期待値条件で検証します。上下幅は既存の売買方向・目標騰落率とは別に、指定期間内の株価到達確率として集計します。",
+                    "配信条件とは独立した分析です。最新保存株価を基準に、指定期間内の上昇・下落到達率を調べます。空欄の目標率は集計しません。",
                     style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = specifiedDays,
+                    onValueChange = { specifiedDays = it.filter { c -> c.isDigit() }.take(4) },
+                    label = { Text("検証期間（1～1000営業日）") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Button(
                     enabled = !cloudBusy && specifiedCode.length >= 4,
@@ -2730,12 +2742,12 @@ private fun ScreeningScreen(
                             cloudStatus = null
                             scope.launch {
                                 runCatching {
-                                    val preference = currentPreference()
                                     val upTarget = optionalSpecifiedTarget(upTargetPercent, "値上がり幅")
                                     val downTarget = optionalSpecifiedTarget(downTargetPercent, "値下がり幅")
+                                    val days = specifiedDays.toIntOrNull()
+                                    require(days != null && days in 1..1000) { "検証期間は1～1000営業日です" }
                                     withContext(Dispatchers.IO) {
-                                        cloud.savePreference(session, preference)
-                                        cloud.requestBacktest(session, specifiedCode, upTarget, downTarget)
+                                        cloud.requestBacktest(session, specifiedCode, upTarget, downTarget, days)
                                     }
                                 }.onSuccess { requestId ->
                                     activeBacktestRequestId = requestId
@@ -2774,21 +2786,40 @@ private fun ScreeningScreen(
                     },
                 ) { Text("分析結果を更新") }
                 requestedBacktest?.let { result ->
-                    Card(Modifier.fillMaxWidth()) {
+                    val rank = resultCardRank(result.score)
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth().clickable { specifiedDetails = !specifiedDetails },
+                        colors = CardDefaults.elevatedCardColors(containerColor = rank?.containerColor
+                            ?: MaterialTheme.colorScheme.surface.copy(alpha = .76f)),
+                    ) {
                         Column(
                             Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text("銘柄: ${result.code} / 状態: ${backtestStatusLabel(result.status)}")
+                            result.companyName?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
                             if (result.status == "pending" || result.status == "processing") {
                                 Text("夕方の取得データで分析しています。完了すると自動で結果が表示されます。画面を閉じても処理は継続します。")
                             }
                             result.referencePrice?.let { Text("基準株価: ${String.format("%,.2f円", it)}") }
+                            result.referenceDate?.let { Text("価格基準日: $it（保存済み終値）") }
                             result.holdingDays?.let { Text("検証期間: ${it}営業日") }
+                            if (result.status == "complete") {
+                                Row(Modifier.fillMaxWidth()) {
+                                    ResultMetric("スコア", result.score?.percentValue(false) ?: "算出不可", Modifier.weight(1f))
+                                    ResultMetric("平均リターン", result.averageReturnPercent?.percentValue() ?: "算出不可", Modifier.weight(1f))
+                                }
+                                Row(Modifier.fillMaxWidth()) {
+                                    ResultMetric("勝率", result.winRatePercent?.percentValue() ?: "算出不可", Modifier.weight(1f))
+                                    ResultMetric("最大含み損", result.maxDrawdownPercent?.percentValue() ?: "算出不可", Modifier.weight(1f))
+                                }
+                                Text("タップで詳細を${if (specifiedDetails) "閉じる" else "表示"}", style = MaterialTheme.typography.bodySmall)
+                                Text("平均リターン・勝率は期間末の終値で評価します。", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (specifiedDetails) {
                             result.tradeCount?.let { Text("過去事例数: ${it}件") }
-                            result.averageReturnPercent?.let { Text("平均リターン: ${String.format("%.2f%%", it)}") }
-                            result.winRatePercent?.let { Text("勝率: ${String.format("%.1f%%", it)}") }
-                            result.maxDrawdownPercent?.let { Text("最大DD: ${String.format("%.2f%%", it)}") }
+                            result.upTargetPrice?.let { Text("上昇目標価格: ${String.format("%,.2f円", it)}") }
+                            result.downTargetPrice?.let { Text("下落目標価格: ${String.format("%,.2f円", it)}") }
                             result.upTargetPercent?.let { target ->
                                 Text(
                                     "${String.format("%.1f", target)}%上昇の到達確率: " +
@@ -2803,15 +2834,15 @@ private fun ScreeningScreen(
                                         (result.medianSessionsToDownTarget?.let { "（中央値 ${String.format("%.1f", it)}営業日）" } ?: "")
                                 )
                             }
-                            result.score?.let { Text("期待値スコア: ${String.format("%.1f", it)}") }
                             result.comment?.let { Text(it) }
-                            result.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                             if (result.prices.size >= 2) {
                                 PriceChart(
                                     prices = result.prices,
                                     modifier = Modifier.fillMaxWidth().height(220.dp),
                                 )
                             }
+                            }
+                            result.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }

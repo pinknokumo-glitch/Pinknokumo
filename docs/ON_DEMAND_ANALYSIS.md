@@ -53,3 +53,23 @@ GitHubの公開リポジトリの標準ランナー実行時間は無料。
 アプリを旧版へ戻すと新規のオンデマンド依頼は発生しない。追加カラムは維持できる。
 Vaultの専用トークンを無効にすると起動を停止できるが、実行中の分析は継続する。
 既存の配信結果・設定・通知データを削除する必要はない。
+# Independent analysis (0.26.0)
+
+Apply `supabase/independent_stock_analysis_upgrade.sql` after the on-demand migration,
+publish the worker, then distribute the new APK. Do not dispatch daily for this upgrade.
+The new RPC does not read or write screening preferences. Old RPC requests keep their
+original behavior. No existing results or preferences are deleted. Rolling back the
+APK is safe; drain new independent requests before rolling back the worker.
+
+The screen accepts its own horizon (1–1000 sessions) and optional positive up/down
+targets (0 < target <= 100). Historical starting points are every stored daily close,
+without RSI/screening filters. Only complete valid future windows are counted.
+Targets use subsequent highs/lows, independently (both can hit); returns and wins use
+the final close, and adverse excursion uses the minimum future low. No fees/taxes or
+dividends are included. Overlapping windows are not independent trades. The reference
+price is the latest saved close, not a real-time quote. Missing statistics remain null.
+The result card expands to show target prices, probabilities, and existing technical/
+fundamental commentary. No new financial data is fetched during analysis.
+
+The WHERE safeguard fix in `on_demand_analysis_upgrade.sql` preserves the already
+applied production fix; do not disable database safety settings.

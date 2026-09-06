@@ -13,10 +13,11 @@ begin
   if p_run_id !~ '^[0-9]+$' or jsonb_array_length(p_stocks) = 0 then
     raise exception 'Invalid evening snapshot';
   end if;
-  update public.stock_search_catalog set available=false;
+  update public.stock_search_catalog set available=false where available=true;
   insert into public.stock_search_catalog(code, company_name, dataset_run_id, available, updated_at)
   select x.code, x.company_name, p_run_id, true, now()
   from jsonb_to_recordset(p_stocks) as x(code text, company_name text)
+  where true
   on conflict(code) do update set company_name=excluded.company_name,
     dataset_run_id=excluded.dataset_run_id, available=true, updated_at=now();
 end $$;

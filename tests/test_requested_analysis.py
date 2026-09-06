@@ -9,7 +9,7 @@ from scripts import run_backtest_requests as worker
 
 
 class RequestedAnalysisTests(unittest.TestCase):
-    def run_worker(self, dataset='123', claimed=True):
+    def run_worker(self, dataset='123', claimed=True, independent=False):
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / 'test.db')
             database.initialize()
@@ -18,6 +18,8 @@ class RequestedAnalysisTests(unittest.TestCase):
                 conn.execute("INSERT INTO evening_analysis_codes VALUES ('7203')")
             item = {'id': 7, 'user_id': 'owner', 'code': '7203',
                     'dataset_run_id': dataset, 'input_snapshot': {'holding_days': 250}}
+            if independent:
+                item['input_snapshot']['analysis_mode'] = 'independent'
             preference = MagicMock(holding_days=250, trade_direction='long',
                                    expectation_evaluation_mode='period_end', target_return_percent=5)
             def http(url, key, method, path, payload=None):
@@ -58,6 +60,16 @@ class RequestedAnalysisTests(unittest.TestCase):
         status, _, _, backtest = self.run_worker(claimed=False)
         self.assertEqual(status, 0)
         backtest.assert_not_called()
+
+    def test_independent_request_does_not_read_or_apply_preferences(self):
+        status, calls, validate, backtest = self.run_worker(independent=True)
+        self.assertEqual(status, 0)
+        validate.assert_not_called()
+        backtest.assert_not_called()
+        result = calls[-1].args[4]['result_json']
+        self.assertEqual(result['holding_days'], 250)
+        self.assertIsNone(result['expectation']['score'])
+        self.assertEqual(calls[-1].args[4]['status'], 'complete')
 
 
 if __name__ == '__main__':
