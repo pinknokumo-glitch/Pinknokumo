@@ -111,6 +111,10 @@ data class RequestedBacktest(
     val downTargetProbabilityPercent: Double?,
     val medianSessionsToUpTarget: Double?,
     val medianSessionsToDownTarget: Double?,
+    val referenceDate: String? = null,
+    val companyName: String? = null,
+    val upTargetPrice: Double? = null,
+    val downTargetPrice: Double? = null,
 )
 data class StockSearchHit(val code: String, val companyName: String)
 
@@ -599,7 +603,9 @@ class SupabaseClient(
         code: String,
         upTargetPercent: Double?,
         downTargetPercent: Double?,
+        holdingDays: Int,
     ): Long {
+        require(holdingDays in 1..1000) { "検証期間は1～1000営業日です" }
         val normalized = code.trim().uppercase()
         require(normalized.matches(Regex("[0-9A-Z]{4,5}"))) {
             "銘柄コードを4～5文字で入力してください"
@@ -611,9 +617,10 @@ class SupabaseClient(
         }
         val response = request(
             "POST",
-            "/rest/v1/rpc/start_stock_analysis",
+            "/rest/v1/rpc/start_independent_stock_analysis",
             JSONObject()
                 .put("p_code", normalized)
+                .put("p_days", holdingDays)
                 .put("p_up", upTargetPercent ?: JSONObject.NULL)
                 .put("p_down", downTargetPercent ?: JSONObject.NULL),
             session.accessToken,
@@ -641,13 +648,13 @@ class SupabaseClient(
             id = row.getLong("id"),
             code = row.getString("code"),
             status = row.getString("status"),
-            score = expectation?.optDouble("score")?.takeUnless { it.isNaN() },
-            comment = result?.optString("comment")?.takeIf { it.isNotEmpty() },
+            score = expectation.optionalDouble("score").takeIf { (summary.optionalInt("trade_count") ?: 0) > 0 },
+            comment = result?.optString("comment")?.takeIf { it.isNotEmpty() && it != "null" },
             prices = (0 until prices.length()).map { index ->
                 val price = prices.getJSONObject(index)
                 Price(price.getString("date"), price.getDouble("close"))
             },
-            errorMessage = row.optString("error_message").takeIf { it.isNotEmpty() },
+            errorMessage = row.optString("error_message").takeIf { it.isNotEmpty() && it != "null" },
             referencePrice = result.optionalDouble("reference_price"),
             holdingDays = result?.optInt("holding_days")?.takeIf { it > 0 },
             tradeCount = summary.optionalInt("trade_count"),
@@ -660,6 +667,10 @@ class SupabaseClient(
             downTargetProbabilityPercent = targets.optionalDouble("down_target_probability_percent"),
             medianSessionsToUpTarget = targets.optionalDouble("median_sessions_to_up_target"),
             medianSessionsToDownTarget = targets.optionalDouble("median_sessions_to_down_target"),
+            referenceDate = result?.optString("reference_date")?.takeIf { it.isNotBlank() && it != "null" },
+            companyName = result?.optString("company_name")?.takeIf { it.isNotBlank() && it != "null" },
+            upTargetPrice = result.optionalDouble("up_target_price"),
+            downTargetPrice = result.optionalDouble("down_target_price"),
         )
     }
 

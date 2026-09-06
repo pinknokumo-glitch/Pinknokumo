@@ -28,6 +28,9 @@ $env:PYTHONWARNINGS = "ignore::DeprecationWarning"
 if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $publishFiles = @(
+    "modules/specified_analysis.py",
+    "tests/test_specified_analysis.py",
+    "supabase/independent_stock_analysis_upgrade.sql",
     ".gitignore",
     ".github/workflows/daily.yml",
     ".github/workflows/stock-analysis.yml",
