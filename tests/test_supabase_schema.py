@@ -192,6 +192,22 @@ class SupabaseSchemaTests(unittest.TestCase):
         self.assertNotIn("delete from", sql)
         self.assertNotIn("drop table", sql)
 
+    def test_short_pattern_upgrade_is_global_and_restricted(self) -> None:
+        sql = compact_sql("short_horizon_patterns_upgrade.sql")
+        expected = (
+            "create table if not exists public.short_pattern_runs",
+            "create table if not exists public.short_pattern_results",
+            "direction in ('long', 'short')",
+            "grant select on table public.short_pattern_runs, public.short_pattern_results to authenticated;",
+            "grant execute on function public.publish_short_pattern_run(text,date,text,jsonb) to service_role;",
+            "security definer set search_path = ''",
+        )
+        for statement in expected:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, sql)
+        self.assertNotIn("screening_preferences", sql)
+        self.assertNotIn("screening_results", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -73,6 +73,16 @@ class DataLoaderTestCase(unittest.TestCase):
         self.assertEqual(kwargs["start"], "2026-01-03")
         self.assertNotIn("period", kwargs)
 
+    def test_quote_is_transient_and_does_not_write_daily_history(self) -> None:
+        with patch("modules.data_loader.yf.Ticker") as ticker:
+            ticker.return_value.fast_info = {"last_price": 1234.5}
+            quote = self.loader.load_yfinance_quote("7203.T", "72030")
+        self.assertEqual(quote["code"], "72030")
+        self.assertEqual(quote["price"], 1234.5)
+        self.assertEqual(quote["source"], "yfinance_fast_info")
+        with self.db.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM price_daily").fetchone()[0], 0)
+
     def test_batch_download_saves_each_ticker(self) -> None:
         index = pd.date_range("2026-01-01", periods=2, freq="D")
         columns = pd.MultiIndex.from_product([

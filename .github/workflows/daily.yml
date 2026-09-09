@@ -52,6 +52,11 @@ jobs:
       - name: Update, analyze, and publish app results
         run: python scripts/run_daily_pipeline.py --candidate-pool --skip-backtest --backtest-matches
 
+      - name: Confirm short-horizon candidates with morning prices
+        # Quote failures are isolated from the existing delivery pipeline.
+        continue-on-error: true
+        run: python scripts/confirm_short_patterns.py
+
       - name: Generate app results for all saved user settings
         run: python scripts/run_cloud_user_screenings.py
 

@@ -589,6 +589,11 @@ private fun StockAiApp(
                 onBack = { page = "home" },
                 onSelect = { selectedCode = it },
             )
+            "patterns" -> ShortPatternScreen(
+                session = session,
+                onBack = { page = "home" },
+                onSelect = { selectedCode = it },
+            )
             "settings" -> ScreeningScreen(
                         initialSession = session,
                         onSessionUpdated = onSessionUpdated,
@@ -651,6 +656,7 @@ private fun HomeMenuScreen(onOpen: (String) -> Unit) {
                 }
                 item { PanelButton("▣", "配信結果", Modifier.fillMaxWidth().height(106.dp)) { onOpen("results") } }
                 item { PanelButton("◷", "前日候補銘柄", Modifier.fillMaxWidth().height(106.dp)) { onOpen("candidates") } }
+                item { PanelButton("↗", "短期パターン", Modifier.fillMaxWidth().height(106.dp)) { onOpen("patterns") } }
                 item { PanelButton("⌕", "指定銘柄分析", Modifier.fillMaxWidth().height(106.dp)) { onOpen("stock") } }
                 item { PanelButton("⚙", "設定", Modifier.fillMaxWidth().height(106.dp)) { onOpen("settings") } }
                 item { PanelButton("●", "運用", Modifier.fillMaxWidth().height(106.dp)) { onOpen("operations") } }
@@ -1837,6 +1843,114 @@ private fun CandidatePoolScreen(
                 )
                 HorizontalDivider()
             }
+        }
+    }
+}
+
+@Composable
+private fun ShortPatternScreen(
+    session: SupabaseSession,
+    onBack: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    val cloud = remember { SupabaseClient() }
+    var results by remember { mutableStateOf<List<ShortPatternResult>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var selectedDirection by remember { mutableStateOf("long") }
+    var refreshToken by remember { mutableIntStateOf(0) }
+    LaunchedEffect(session.userId, refreshToken) {
+        error = null
+        runCatching {
+            withContext(Dispatchers.IO) {
+                cloud.withFreshSession(session) { fresh -> cloud.loadLatestShortPatterns(fresh) }
+            }
+        }.onSuccess { authenticated -> results = authenticated.value }
+            .onFailure { error = it.message }
+    }
+    val displayed = results.filter { it.direction == selectedDirection }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("短期パターン") },
+                navigationIcon = { TextButton(onClick = onBack) { Text("戻る") } },
+                actions = { TextButton(onClick = { refreshToken++ }) { Text("更新") } },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            Modifier.padding(padding).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            item {
+                Text(
+                    "前日終値で抽出した短期の形です。確率は、同じ形の過去事例で翌営業日始値から${results.firstOrNull()?.holdingDays ?: 5}営業日以内に目標へ到達した割合です。朝の価格は確認用で、確率を再計算しません。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = selectedDirection == "long",
+                        onClick = { selectedDirection = "long" },
+                        label = { Text("上昇候補") },
+                    )
+                    FilterChip(
+                        selected = selectedDirection == "short",
+                        onClick = { selectedDirection = "short" },
+                        label = { Text("下落警戒（売り建て）") },
+                    )
+                }
+            }
+            error?.let { message ->
+                item { Text("短期パターンを取得できません: $message", color = MaterialTheme.colorScheme.error) }
+            }
+            if (error == null && results.isEmpty()) {
+                item { Text("まだ前日終値の短期パターンが公開されていません。17時台の全銘柄更新後に表示されます。") }
+            } else if (error == null && displayed.isEmpty()) {
+                item { Text(if (selectedDirection == "long") "上昇候補はありません" else "下落警戒候補はありません") }
+            }
+            items(displayed, key = { "${it.direction}-${it.position}-${it.code}" }) { result ->
+                ShortPatternCard(result = result, onClick = { onSelect(result.code) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShortPatternCard(result: ShortPatternResult, onClick: () -> Unit) {
+    val directionLabel = if (result.direction == "long") "上昇候補・買い検討" else "下落警戒・売り建て検討"
+    val barrier = if (result.direction == "long") result.resistancePrice else result.supportPrice
+    val barrierLabel = if (result.direction == "long") "直近の抵抗目安" else "直近の支持目安"
+    ElevatedCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(directionLabel, color = if (result.direction == "long") Color(0xFF49E7A3) else Color(0xFFFF9A9A))
+            Text(result.companyName ?: result.code, style = MaterialTheme.typography.titleMedium)
+            Text("${result.code}　${result.patternLabel}", style = MaterialTheme.typography.bodySmall)
+            Text(result.patternSummary.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ResultMetric("${result.targetPercent.percentValue(false)}到達確率", result.targetProbabilityPercent.percentValue(false), Modifier.weight(1f))
+                ResultMetric("過去事例", "${result.tradeCount}件", Modifier.weight(1f))
+                ResultMetric("平均リターン", result.averageReturnPercent.percentValue(), Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ResultMetric("最大逆行", result.maxAdversePercent.percentValue(), Modifier.weight(1f))
+                ResultMetric("直近検証", result.outOfSampleTargetProbabilityPercent.percentValue(false), Modifier.weight(1f))
+                ResultMetric("基準終値", result.signalClose.yenValue(), Modifier.weight(1f))
+            }
+            Text("目標価格: ${result.targetPrice.yenValue()} / $barrierLabel: ${barrier.yenValue()}", style = MaterialTheme.typography.bodySmall)
+            val morning = result.morningPrice
+            if (morning != null) {
+                Text(
+                    "朝の確認価格: ${morning.yenValue()} → 目標 ${result.morningTargetPrice.yenValue()}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(result.confirmationStatus.ifBlank { "前日終値で抽出。朝の確認待ち" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -3482,6 +3596,11 @@ private fun Double?.percentValue(includeSign: Boolean = true): String {
     if (this == null || !isFinite()) return "—"
     val pattern = if (includeSign) "%+.1f%%" else "%.1f"
     return String.format(pattern, this)
+}
+
+private fun Double?.yenValue(): String {
+    if (this == null || !isFinite()) return "—"
+    return String.format("%,.0f円", this)
 }
 
 private fun analysisSection(comment: String?, title: String): String? {
