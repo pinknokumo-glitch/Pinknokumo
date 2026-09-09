@@ -105,6 +105,21 @@ CREATE TABLE IF NOT EXISTS screening_pool_run (
     status TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS short_pattern_run (
+    run_id TEXT PRIMARY KEY,
+    signal_date TEXT NOT NULL,
+    source_run_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS short_pattern_result (
+    run_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    PRIMARY KEY (run_id, position),
+    FOREIGN KEY (run_id) REFERENCES short_pattern_run(run_id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS portfolio_position (
     code TEXT PRIMARY KEY,
     quantity REAL NOT NULL CHECK(quantity > 0),
@@ -124,6 +139,7 @@ CREATE INDEX IF NOT EXISTS idx_daily_date ON price_daily(trade_date);
 CREATE INDEX IF NOT EXISTS idx_financial_code ON financial(code);
 CREATE INDEX IF NOT EXISTS idx_market_regime_date ON market_regime(trade_date);
 CREATE INDEX IF NOT EXISTS idx_candidate_pool_date ON screening_candidate_pool(pool_date);
+CREATE INDEX IF NOT EXISTS idx_short_pattern_result_code ON short_pattern_result(code);
 """
 
 class Database:
@@ -309,6 +325,40 @@ class Database:
                 [pool_date],
             )]
         return metadata, codes
+
+    def replace_short_patterns(
+        self, run_id: str, signal_date: str, source_run_id: str,
+        results: Iterable[Mapping[str, object]],
+    ) -> int:
+        rows = [dict(item) for item in results]
+        with self.connect() as conn:
+            conn.execute(
+                """INSERT INTO short_pattern_run(run_id, signal_date, source_run_id)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(run_id) DO UPDATE SET
+                     signal_date=excluded.signal_date,
+                     source_run_id=excluded.source_run_id,
+                     updated_at=CURRENT_TIMESTAMP""",
+                [run_id, signal_date, source_run_id],
+            )
+            conn.execute("DELETE FROM short_pattern_result WHERE run_id=?", [run_id])
+            conn.executemany(
+                "INSERT INTO short_pattern_result(run_id, position, code, result_json) VALUES (?, ?, ?, ?)",
+                [(run_id, int(row["position"]), str(row["code"]), json.dumps(row, ensure_ascii=False)) for row in rows],
+            )
+        return len(rows)
+
+    def latest_short_patterns(self) -> tuple[dict[str, object] | None, list[dict[str, object]]]:
+        with self.connect() as conn:
+            metadata = conn.execute(
+                "SELECT run_id, signal_date, source_run_id, updated_at FROM short_pattern_run ORDER BY updated_at DESC LIMIT 1"
+            ).fetchone()
+            if metadata is None:
+                return None, []
+            values = [json.loads(row[0]) for row in conn.execute(
+                "SELECT result_json FROM short_pattern_result WHERE run_id=? ORDER BY position", [metadata["run_id"]]
+            )]
+        return dict(metadata), values
 
     def save_portfolio_position(self, code: str, quantity: float, average_cost: float, note: str | None = None) -> None:
         if quantity <= 0 or average_cost < 0:
