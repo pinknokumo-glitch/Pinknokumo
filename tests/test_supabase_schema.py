@@ -198,6 +198,7 @@ class SupabaseSchemaTests(unittest.TestCase):
             "create table if not exists public.short_pattern_runs",
             "create table if not exists public.short_pattern_results",
             "direction in ('long', 'short')",
+            "tier in ('primary', 'watch')",
             "grant select on table public.short_pattern_runs, public.short_pattern_results to authenticated;",
             "grant execute on function public.publish_short_pattern_run(text,date,text,jsonb) to service_role;",
             "security definer set search_path = ''",
@@ -207,6 +208,13 @@ class SupabaseSchemaTests(unittest.TestCase):
                 self.assertIn(statement, sql)
         self.assertNotIn("screening_preferences", sql)
         self.assertNotIn("screening_results", sql)
+
+    def test_short_pattern_tier_upgrade_preserves_existing_results(self) -> None:
+        sql = compact_sql("short_horizon_pattern_tier_upgrade.sql")
+        self.assertIn("add column if not exists tier text not null default 'watch'", sql)
+        self.assertIn("coalesce(r.tier, 'watch')", sql)
+        self.assertNotIn("drop table", sql)
+        self.assertNotIn("screening_preferences", sql)
 
 
 if __name__ == "__main__":

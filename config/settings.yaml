@@ -65,7 +65,13 @@ short_horizon_patterns:
   horizons: [3, 5, 10]
   display_horizon: 5
   target_percent: 3.0
-  minimum_trade_count: 30
-  minimum_oos_trade_count: 6
-  minimum_probability_percent: 55.0
-  maximum_candidates_per_side: 50
+  primary:
+    minimum_trade_count: 30
+    minimum_oos_trade_count: 6
+    minimum_probability_percent: 55.0
+    maximum_candidates_per_side: 20
+  watch:
+    minimum_trade_count: 20
+    minimum_oos_trade_count: 4
+    minimum_probability_percent: 50.0
+    maximum_candidates_per_side: 30
