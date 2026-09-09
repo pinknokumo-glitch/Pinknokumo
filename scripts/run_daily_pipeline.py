@@ -56,14 +56,19 @@ def require_fresh_update_for_notification(notify: bool, skip_update: bool) -> No
         )
 
 
-def require_complete_candidate_update(
-    candidate_pool: bool, update: dict[str, object]
-) -> None:
-    if candidate_pool and update.get("failed"):
-        raise RuntimeError(
-            "朝の候補銘柄に最新価格を取得できない銘柄があるため、"
-            "通常配信を停止しました。"
-        )
+def available_candidate_codes(
+    candidate_pool: bool, candidate_codes: list[str] | None, update: dict[str, object]
+) -> tuple[list[str] | None, list[str]]:
+    """Exclude only candidates without a current price; never use their stale rows."""
+    if not candidate_pool or candidate_codes is None:
+        return candidate_codes, []
+    failed_codes = {
+        str(item.get("code", "")).strip().upper()
+        for item in update.get("failed", [])
+        if isinstance(item, dict) and str(item.get("code", "")).strip()
+    }
+    excluded = [code for code in candidate_codes if code.upper() in failed_codes]
+    return [code for code in candidate_codes if code.upper() not in failed_codes], excluded
 
 
 def main() -> int:
@@ -127,7 +132,16 @@ def main() -> int:
             else DailyUpdateJob(database, settings, regime).run()
         )
         print(json.dumps({"daily_update": update}, ensure_ascii=False, indent=2))
-        require_complete_candidate_update(args.candidate_pool, update)
+        candidate_codes, excluded_candidate_codes = available_candidate_codes(
+            args.candidate_pool, candidate_codes, update
+        )
+        if excluded_candidate_codes:
+            print(
+                "Candidate price refresh failed; excluded from this delivery: "
+                + ", ".join(excluded_candidate_codes)
+            )
+    else:
+        excluded_candidate_codes = []
 
     if not args.skip_backtest:
         rule = screening["profiles"].get(profile)
@@ -216,6 +230,7 @@ def main() -> int:
             "universe_count": evaluated_count,
             "candidate_count": prefiltered_count,
             "hit_count": len(hits),
+            "excluded_price_unavailable_codes": excluded_candidate_codes,
         })
     report_path = DailyReportBuilder.write(report, DailyReportBuilder.default_path(ROOT))
     print(f"Report written: {report_path}")
@@ -255,6 +270,11 @@ def main() -> int:
     if update and (update.get("failed") or update.get("financial_failed")):
         failed_count = len(update.get("failed", [])) + len(update.get("financial_failed", []))
         warnings.append(f"データ更新の一部に失敗しました（{failed_count}件）。")
+    if excluded_candidate_codes:
+        warnings.append(
+            "最新価格を取得できない候補を今回の配信対象から除外しました"
+            f"（{len(excluded_candidate_codes)}件）。"
+        )
     if chart_warning:
         warnings.append("チャートを更新できなかったため、今回はテキストのみ送信します。")
     notifier = LineNotifier(notification)

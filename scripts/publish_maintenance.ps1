@@ -87,6 +87,7 @@ $publishFiles = @(
     "scripts/update_signed_android.ps1",
     "scripts/publish_maintenance.ps1",
     "tests/test_batch_backtest.py",
+    "tests/test_daily_pipeline.py",
     "tests/test_backtest_history.py",
     "tests/test_backtest.py",
     "tests/test_api.py",
