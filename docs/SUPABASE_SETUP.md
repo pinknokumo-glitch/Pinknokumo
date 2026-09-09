@@ -122,8 +122,13 @@ Preference writes remain restricted by RLS.
    `supabase/specified_stock_analysis_upgrade.sql` once. It adds optional independent
    up/down target bands to requested backtests and the read-only stock search catalog.
    The daily workflow publishes the catalog from the existing stock master.
-14. Insert the initial preference while authenticated, or use the dashboard for the first row.
-15. Register the three server values above as GitHub Actions secrets.
+14. Existing projects enabling independent short-horizon patterns must run
+   `supabase/short_horizon_patterns_upgrade.sql` once. It creates a global, read-only
+   evening pattern dataset. It does not change saved screening conditions, delivery
+   results, or specified-stock analysis. Run `evening.yml` once after applying it;
+   the next daily workflow adds the optional morning reference price.
+15. Insert the initial preference while authenticated, or use the dashboard for the first row.
+16. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
 # Long-horizon expectation backtests

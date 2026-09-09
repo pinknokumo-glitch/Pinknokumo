@@ -117,6 +117,31 @@ data class RequestedBacktest(
     val downTargetPrice: Double? = null,
 )
 data class StockSearchHit(val code: String, val companyName: String)
+data class ShortPatternResult(
+    val signalDate: String,
+    val position: Int,
+    val code: String,
+    val companyName: String?,
+    val patternLabel: String,
+    val direction: String,
+    val patternSummary: String?,
+    val signalClose: Double,
+    val targetPercent: Double,
+    val targetPrice: Double,
+    val resistancePrice: Double?,
+    val supportPrice: Double?,
+    val holdingDays: Int,
+    val targetProbabilityPercent: Double,
+    val tradeCount: Int,
+    val averageReturnPercent: Double?,
+    val maxAdversePercent: Double?,
+    val outOfSampleTradeCount: Int,
+    val outOfSampleTargetProbabilityPercent: Double?,
+    val morningPrice: Double?,
+    val morningPriceAt: String?,
+    val morningTargetPrice: Double?,
+    val confirmationStatus: String,
+)
 
 private fun JSONObject?.optionalDouble(name: String): Double? {
     if (this == null || isNull(name)) return null
@@ -570,6 +595,56 @@ class SupabaseClient(
             .takeWhile { it.getString("pool_date") == latestDate }
             .map { it.getString("code") }
         return CandidatePool(latestDate, codes, updatedAt)
+    }
+
+    fun loadLatestShortPatterns(session: SupabaseSession): List<ShortPatternResult> {
+        val runs = requestArray(
+            "GET",
+            "/rest/v1/short_pattern_runs?select=run_id,signal_date&order=updated_at.desc&limit=1",
+            token = session.accessToken,
+        )
+        if (runs.length() == 0) return emptyList()
+        val run = runs.getJSONObject(0)
+        val runId = URLEncoder.encode(run.getString("run_id"), Charsets.UTF_8.name())
+        val response = requestArray(
+            "GET",
+            "/rest/v1/short_pattern_results?run_id=eq.$runId" +
+                "&select=position,code,company_name,pattern_label,direction,pattern_summary," +
+                "signal_close,target_percent,target_price,resistance_price,support_price,holding_days," +
+                "target_probability_percent,trade_count,average_return_percent,max_adverse_percent," +
+                "out_of_sample_trade_count,out_of_sample_target_probability_percent," +
+                "morning_price,morning_price_at,morning_target_price,confirmation_status" +
+                "&order=direction.asc,position.asc&limit=100",
+            token = session.accessToken,
+        )
+        return (0 until response.length()).map { index ->
+            val row = response.getJSONObject(index)
+            ShortPatternResult(
+                signalDate = run.getString("signal_date"),
+                position = row.getInt("position"),
+                code = row.getString("code"),
+                companyName = row.optString("company_name").takeIf { it.isNotBlank() },
+                patternLabel = row.getString("pattern_label"),
+                direction = row.getString("direction"),
+                patternSummary = row.optString("pattern_summary").takeIf { it.isNotBlank() },
+                signalClose = row.getDouble("signal_close"),
+                targetPercent = row.getDouble("target_percent"),
+                targetPrice = row.getDouble("target_price"),
+                resistancePrice = row.optionalDouble("resistance_price"),
+                supportPrice = row.optionalDouble("support_price"),
+                holdingDays = row.getInt("holding_days"),
+                targetProbabilityPercent = row.getDouble("target_probability_percent"),
+                tradeCount = row.getInt("trade_count"),
+                averageReturnPercent = row.optionalDouble("average_return_percent"),
+                maxAdversePercent = row.optionalDouble("max_adverse_percent"),
+                outOfSampleTradeCount = row.optInt("out_of_sample_trade_count", 0),
+                outOfSampleTargetProbabilityPercent = row.optionalDouble("out_of_sample_target_probability_percent"),
+                morningPrice = row.optionalDouble("morning_price"),
+                morningPriceAt = row.optString("morning_price_at").takeIf { it.isNotBlank() },
+                morningTargetPrice = row.optionalDouble("morning_target_price"),
+                confirmationStatus = row.optString("confirmation_status"),
+            )
+        }
     }
 
     fun searchStockCatalog(session: SupabaseSession, query: String): List<StockSearchHit> {

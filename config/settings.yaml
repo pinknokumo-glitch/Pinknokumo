@@ -58,3 +58,14 @@ screening_universe:
     monthly_rsi_max: 25
   maximum_pool_age_days: 4
   minimum_coverage_ratio: 0.95
+
+# A fixed, global short-horizon research set.  These patterns are intentionally
+# independent of each user's saved screening rules and of delivery results.
+short_horizon_patterns:
+  horizons: [3, 5, 10]
+  display_horizon: 5
+  target_percent: 3.0
+  minimum_trade_count: 30
+  minimum_oos_trade_count: 6
+  minimum_probability_percent: 55.0
+  maximum_candidates_per_side: 50

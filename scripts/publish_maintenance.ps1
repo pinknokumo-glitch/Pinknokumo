@@ -72,6 +72,7 @@ $publishFiles = @(
     "modules/pooled_backtest.py",
     "modules/cloud_results.py",
     "modules/cloud_stock_catalog.py",
+    "modules/cloud_short_patterns.py",
     "modules/screener.py",
     "modules/screening_options.py",
     "modules/screening_relaxation.py",
@@ -82,6 +83,8 @@ $publishFiles = @(
     "scripts/run_cloud_user_screenings.py",
     "scripts/run_backtest_requests.py",
     "scripts/publish_stock_catalog.py",
+    "scripts/run_short_pattern_scan.py",
+    "scripts/confirm_short_patterns.py",
     "scripts/install_signed_android.ps1",
     "scripts/setup_android_signing.ps1",
     "scripts/update_signed_android.ps1",
@@ -119,7 +122,9 @@ $publishFiles = @(
     "tests/test_cloud_stock_catalog.py",
     "tests/test_core.py",
     "tests/test_data_loader.py",
-    "tests/test_pooled_backtest.py"
+    "tests/test_pooled_backtest.py",
+    "tests/test_short_horizon_patterns.py",
+    "supabase/short_horizon_patterns_upgrade.sql"
 )
 & $git add -- $publishFiles
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }

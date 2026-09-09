@@ -48,6 +48,13 @@ jobs:
       - name: Refresh all Prime, Standard, and Growth stocks
         run: python scripts/run_evening_universe.py
 
+      - name: Build short-horizon pattern candidates
+        # This independent research feature must not block the full-market snapshot.
+        continue-on-error: true
+        env:
+          EVENING_DATASET_RUN_ID: ${{ github.run_id }}
+        run: python scripts/run_short_pattern_scan.py
+
       - name: Save updated database
         if: always()
         uses: actions/cache/save@v5

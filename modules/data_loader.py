@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from collections.abc import Mapping
 import pandas as pd
 import yfinance as yf
@@ -51,6 +51,24 @@ class DataLoader:
         if frame.empty:
             raise RuntimeError(f"No price data returned for {ticker}")
         return self._save_yfinance_frame(code, frame)
+
+    def load_yfinance_quote(self, ticker: str, code: str) -> dict[str, object]:
+        """Fetch a transient morning reference price without altering daily history."""
+        try:
+            info = yf.Ticker(ticker).fast_info
+            value = next((info.get(name) for name in ("last_price", "lastPrice", "regular_market_price")
+                          if info.get(name) is not None), None)
+            price = float(value)
+        except Exception as error:
+            raise RuntimeError(f"Could not fetch quote for {ticker}") from error
+        if not pd.notna(price) or not price > 0:
+            raise RuntimeError(f"No current quote returned for {ticker}")
+        return {
+            "code": code,
+            "price": price,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "source": "yfinance_fast_info",
+        }
 
     def load_yfinance_batch(
         self,
