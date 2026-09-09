@@ -127,8 +127,12 @@ Preference writes remain restricted by RLS.
    evening pattern dataset. It does not change saved screening conditions, delivery
    results, or specified-stock analysis. Run `evening.yml` once after applying it;
    the next daily workflow adds the optional morning reference price.
-15. Insert the initial preference while authenticated, or use the dashboard for the first row.
-16. Register the three server values above as GitHub Actions secrets.
+15. Existing projects upgrading short-horizon patterns to separate primary and watch
+   tiers must then run `supabase/short_horizon_pattern_tier_upgrade.sql` once. It only
+   adds the tier field and updates the existing publisher function; it does not reset
+   results or alter saved screening preferences.
+16. Insert the initial preference while authenticated, or use the dashboard for the first row.
+17. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
 # Long-horizon expectation backtests

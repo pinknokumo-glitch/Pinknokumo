@@ -19,9 +19,18 @@ class ShortHorizonPatternTestCase(unittest.TestCase):
         indicators = yaml.safe_load(Path("config/indicators.yaml").read_text(encoding="utf-8"))
         settings["short_horizon_patterns"] = {
             **settings["short_horizon_patterns"],
-            "minimum_trade_count": 1,
-            "minimum_oos_trade_count": 1,
-            "minimum_probability_percent": 0,
+            "primary": {
+                **settings["short_horizon_patterns"]["primary"],
+                "minimum_trade_count": 1,
+                "minimum_oos_trade_count": 1,
+                "minimum_probability_percent": 0,
+            },
+            "watch": {
+                **settings["short_horizon_patterns"]["watch"],
+                "minimum_trade_count": 1,
+                "minimum_oos_trade_count": 1,
+                "minimum_probability_percent": 0,
+            },
         }
         self.scanner = ShortHorizonPatternScanner(indicators, settings)
 
@@ -66,14 +75,48 @@ class ShortHorizonPatternTestCase(unittest.TestCase):
         self.assertEqual(summary["out_of_sample_target_probability_percent"], 100.0)
 
     def test_eligibility_requires_recent_out_of_sample_probability(self) -> None:
-        self.scanner.minimum_probability_percent = 55.0
+        self.scanner.primary_thresholds["minimum_probability_percent"] = 55.0
         stats = {
             "trade_count": 30,
             "target_probability_percent": 80.0,
             "out_of_sample_trade_count": 6,
             "out_of_sample_target_probability_percent": 0.0,
         }
-        self.assertFalse(self.scanner._eligible(stats))
+        self.assertFalse(self.scanner._eligible(stats, self.scanner.primary_thresholds))
+
+    def test_watch_tier_is_available_without_reclassifying_it_as_primary(self) -> None:
+        self.scanner.primary_thresholds.update({
+            "minimum_trade_count": 30,
+            "minimum_oos_trade_count": 6,
+            "minimum_probability_percent": 55.0,
+        })
+        self.scanner.watch_thresholds.update({
+            "minimum_trade_count": 20,
+            "minimum_oos_trade_count": 4,
+            "minimum_probability_percent": 50.0,
+        })
+        stats = {
+            "trade_count": 24,
+            "target_probability_percent": 52.0,
+            "out_of_sample_trade_count": 5,
+            "out_of_sample_target_probability_percent": 52.0,
+        }
+        self.assertEqual(self.scanner._tier(stats), "watch")
+
+    def test_selection_orders_primary_before_watch_and_caps_each_tier_per_side(self) -> None:
+        self.scanner.primary_thresholds["maximum_candidates_per_side"] = 1
+        self.scanner.watch_thresholds["maximum_candidates_per_side"] = 1
+        selected = self.scanner._select([
+            {"code": "4000", "direction": "short", "tier": "watch", "target_probability_percent": 60.0, "trade_count": 30},
+            {"code": "2000", "direction": "long", "tier": "watch", "target_probability_percent": 60.0, "trade_count": 30},
+            {"code": "3000", "direction": "short", "tier": "primary", "target_probability_percent": 55.0, "trade_count": 30},
+            {"code": "1000", "direction": "long", "tier": "primary", "target_probability_percent": 55.0, "trade_count": 30},
+            {"code": "0999", "direction": "long", "tier": "primary", "target_probability_percent": 99.0, "trade_count": 30},
+        ])
+        self.assertEqual(
+            [(item["position"], item["code"], item["tier"]) for item in selected],
+            [(1, "0999", "primary"), (2, "2000", "watch"), (3, "3000", "primary"), (4, "4000", "watch")],
+        )
 
     def test_confirmation_rebases_target_without_changing_probability(self) -> None:
         result = confirmation({

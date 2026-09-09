@@ -1854,7 +1854,7 @@ private fun ShortPatternScreen(
     onSelect: (String) -> Unit,
 ) {
     val cloud = remember { SupabaseClient() }
-    var results by remember { mutableStateOf<List<ShortPatternResult>>(emptyList()) }
+    var snapshot by remember { mutableStateOf<ShortPatternSnapshot?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedDirection by remember { mutableStateOf("long") }
     var refreshToken by remember { mutableIntStateOf(0) }
@@ -1864,10 +1864,12 @@ private fun ShortPatternScreen(
             withContext(Dispatchers.IO) {
                 cloud.withFreshSession(session) { fresh -> cloud.loadLatestShortPatterns(fresh) }
             }
-        }.onSuccess { authenticated -> results = authenticated.value }
+        }.onSuccess { authenticated -> snapshot = authenticated.value }
             .onFailure { error = it.message }
     }
-    val displayed = results.filter { it.direction == selectedDirection }
+    val results = snapshot?.results.orEmpty()
+    val primary = results.filter { it.direction == selectedDirection && it.tier == "primary" }
+    val watch = results.filter { it.direction == selectedDirection && it.tier != "primary" }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1906,12 +1908,25 @@ private fun ShortPatternScreen(
             error?.let { message ->
                 item { Text("短期パターンを取得できません: $message", color = MaterialTheme.colorScheme.error) }
             }
-            if (error == null && results.isEmpty()) {
+            if (error == null && snapshot == null) {
                 item { Text("まだ前日終値の短期パターンが公開されていません。17時台の全銘柄更新後に表示されます。") }
-            } else if (error == null && displayed.isEmpty()) {
+            } else if (error == null && snapshot?.candidateCount == 0) {
+                item { Text("本日は、形状・過去事例・直近検証の基準を満たす候補がありません。") }
+            } else if (error == null && primary.isEmpty() && watch.isEmpty()) {
                 item { Text(if (selectedDirection == "long") "上昇候補はありません" else "下落警戒候補はありません") }
             }
-            items(displayed, key = { "${it.direction}-${it.position}-${it.code}" }) { result ->
+            if (primary.isNotEmpty()) item {
+                Text("本命候補", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                Text("過去30件以上・直近検証を含め到達確率55%以上", style = MaterialTheme.typography.bodySmall)
+            }
+            items(primary, key = { "${it.direction}-${it.position}-${it.code}" }) { result ->
+                ShortPatternCard(result = result, onClick = { onSelect(result.code) })
+            }
+            if (watch.isNotEmpty()) item {
+                Text("観察候補", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+                Text("過去20件以上・直近検証を含め到達確率50%以上。最終判断前の確認用です。", style = MaterialTheme.typography.bodySmall)
+            }
+            items(watch, key = { "${it.direction}-${it.position}-${it.code}" }) { result ->
                 ShortPatternCard(result = result, onClick = { onSelect(result.code) })
             }
         }
@@ -1928,7 +1943,7 @@ private fun ShortPatternCard(result: ShortPatternResult, onClick: () -> Unit) {
             Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(directionLabel, color = if (result.direction == "long") Color(0xFF49E7A3) else Color(0xFFFF9A9A))
+            Text("${if (result.tier == "primary") "本命" else "観察"} / $directionLabel", color = if (result.direction == "long") Color(0xFF49E7A3) else Color(0xFFFF9A9A))
             Text(result.companyName ?: result.code, style = MaterialTheme.typography.titleMedium)
             Text("${result.code}　${result.patternLabel}", style = MaterialTheme.typography.bodySmall)
             Text(result.patternSummary.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

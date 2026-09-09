@@ -124,6 +124,7 @@ data class ShortPatternResult(
     val companyName: String?,
     val patternLabel: String,
     val direction: String,
+    val tier: String,
     val patternSummary: String?,
     val signalClose: Double,
     val targetPercent: Double,
@@ -141,6 +142,11 @@ data class ShortPatternResult(
     val morningPriceAt: String?,
     val morningTargetPrice: Double?,
     val confirmationStatus: String,
+)
+data class ShortPatternSnapshot(
+    val signalDate: String,
+    val candidateCount: Int,
+    val results: List<ShortPatternResult>,
 )
 
 private fun JSONObject?.optionalDouble(name: String): Double? {
@@ -597,27 +603,33 @@ class SupabaseClient(
         return CandidatePool(latestDate, codes, updatedAt)
     }
 
-    fun loadLatestShortPatterns(session: SupabaseSession): List<ShortPatternResult> {
+    fun loadLatestShortPatterns(session: SupabaseSession): ShortPatternSnapshot? {
         val runs = requestArray(
             "GET",
-            "/rest/v1/short_pattern_runs?select=run_id,signal_date&order=updated_at.desc&limit=1",
+            "/rest/v1/short_pattern_runs?select=run_id,signal_date,candidate_count&order=updated_at.desc&limit=1",
             token = session.accessToken,
         )
-        if (runs.length() == 0) return emptyList()
+        if (runs.length() == 0) return null
         val run = runs.getJSONObject(0)
         val runId = URLEncoder.encode(run.getString("run_id"), Charsets.UTF_8.name())
-        val response = requestArray(
-            "GET",
-            "/rest/v1/short_pattern_results?run_id=eq.$runId" +
-                "&select=position,code,company_name,pattern_label,direction,pattern_summary," +
-                "signal_close,target_percent,target_price,resistance_price,support_price,holding_days," +
-                "target_probability_percent,trade_count,average_return_percent,max_adverse_percent," +
-                "out_of_sample_trade_count,out_of_sample_target_probability_percent," +
-                "morning_price,morning_price_at,morning_target_price,confirmation_status" +
-                "&order=direction.asc,position.asc&limit=100",
-            token = session.accessToken,
-        )
-        return (0 until response.length()).map { index ->
+        val basePath = "/rest/v1/short_pattern_results?run_id=eq.$runId"
+        val select = "position,code,company_name,pattern_label,direction,tier,pattern_summary," +
+            "signal_close,target_percent,target_price,resistance_price,support_price,holding_days," +
+            "target_probability_percent,trade_count,average_return_percent,max_adverse_percent," +
+            "out_of_sample_trade_count,out_of_sample_target_probability_percent," +
+            "morning_price,morning_price_at,morning_target_price,confirmation_status"
+        val response = try {
+            requestArray("GET", "$basePath&select=$select&order=direction.asc,position.asc&limit=200", token = session.accessToken)
+        } catch (error: SupabaseRequestException) {
+            // The tier migration is applied independently. Keep existing results readable
+            // until it is applied, classifying them as observation candidates.
+            if (!error.message.orEmpty().contains("tier", ignoreCase = true)) throw error
+            requestArray(
+                "GET", "$basePath&select=${select.replace("tier,", "")}&order=direction.asc,position.asc&limit=200",
+                token = session.accessToken,
+            )
+        }
+        val results = (0 until response.length()).map { index ->
             val row = response.getJSONObject(index)
             ShortPatternResult(
                 signalDate = run.getString("signal_date"),
@@ -626,6 +638,7 @@ class SupabaseClient(
                 companyName = row.optString("company_name").takeIf { it.isNotBlank() },
                 patternLabel = row.getString("pattern_label"),
                 direction = row.getString("direction"),
+                tier = row.optString("tier", "watch"),
                 patternSummary = row.optString("pattern_summary").takeIf { it.isNotBlank() },
                 signalClose = row.getDouble("signal_close"),
                 targetPercent = row.getDouble("target_percent"),
@@ -645,6 +658,11 @@ class SupabaseClient(
                 confirmationStatus = row.optString("confirmation_status"),
             )
         }
+        return ShortPatternSnapshot(
+            signalDate = run.getString("signal_date"),
+            candidateCount = run.optInt("candidate_count", results.size),
+            results = results,
+        )
     }
 
     fun searchStockCatalog(session: SupabaseSession, query: String): List<StockSearchHit> {

@@ -38,9 +38,8 @@ class ShortHorizonPatternScanner:
         self.horizons = tuple(sorted({int(value) for value in self.config["horizons"]}))
         self.display_horizon = int(self.config["display_horizon"])
         self.target_percent = float(self.config["target_percent"])
-        self.minimum_trade_count = int(self.config["minimum_trade_count"])
-        self.minimum_oos_trade_count = int(self.config["minimum_oos_trade_count"])
-        self.minimum_probability_percent = float(self.config["minimum_probability_percent"])
+        self.primary_thresholds = self._thresholds("primary")
+        self.watch_thresholds = self._thresholds("watch")
         if not self.horizons or self.display_horizon not in self.horizons:
             raise ValueError("display_horizon must be included in horizons")
 
@@ -74,7 +73,8 @@ class ShortHorizonPatternScanner:
                 if not self._matches(frame, current_index, spec):
                     continue
                 stats = summaries[(spec.pattern_id, self.display_horizon)]
-                if not self._eligible(stats):
+                tier = self._tier(stats)
+                if tier is None:
                     continue
                 latest = frame.iloc[current_index]
                 close = float(latest["close"])
@@ -86,6 +86,7 @@ class ShortHorizonPatternScanner:
                     "pattern_id": spec.pattern_id,
                     "pattern_label": spec.label,
                     "direction": spec.direction,
+                    "tier": tier,
                     "pattern_summary": spec.summary,
                     "signal_date": str(pd.Timestamp(latest["trade_date"]).date()),
                     "signal_close": round(close, 4),
@@ -109,19 +110,34 @@ class ShortHorizonPatternScanner:
                     "morning_target_price": None,
                     "confirmation_status": "前日終値で抽出。朝の確認待ち",
                 })
+        return self._select(active)
+
+    def _select(self, active: list[dict[str, object]]) -> list[dict[str, object]]:
         active.sort(key=lambda item: (
             0 if item["direction"] == "long" else 1,
+            0 if item["tier"] == "primary" else 1,
             -float(item["target_probability_percent"]),
             -int(item["trade_count"]),
             str(item["code"]),
         ))
-        limit = int(self.config["maximum_candidates_per_side"])
-        selected = [
-            item
-            for direction in ("long", "short")
-            for item in [row for row in active if row["direction"] == direction][:limit]
-        ]
+        selected = []
+        for direction in ("long", "short"):
+            for tier, thresholds in (("primary", self.primary_thresholds), ("watch", self.watch_thresholds)):
+                rows = [row for row in active if row["direction"] == direction and row["tier"] == tier]
+                selected.extend(rows[:int(thresholds["maximum_candidates_per_side"])])
         return [{**item, "position": position + 1} for position, item in enumerate(selected)]
+
+    def _thresholds(self, tier: str) -> dict[str, float | int]:
+        values = self.config.get(tier)
+        if not isinstance(values, Mapping):
+            # Backward-compatible for a local configuration created before tiers.
+            values = self.config
+        return {
+            "minimum_trade_count": int(values["minimum_trade_count"]),
+            "minimum_oos_trade_count": int(values["minimum_oos_trade_count"]),
+            "minimum_probability_percent": float(values["minimum_probability_percent"]),
+            "maximum_candidates_per_side": int(values.get("maximum_candidates_per_side", 20)),
+        }
 
     def _prepare(self, source: pd.DataFrame) -> pd.DataFrame:
         required = {"trade_date", "open", "high", "low", "close", "volume"}
@@ -221,17 +237,25 @@ class ShortHorizonPatternScanner:
             "out_of_sample_target_probability_percent": round(float(oos["target_hit"].mean() * 100), 2),
         }
 
-    def _eligible(self, stats: Mapping[str, object]) -> bool:
+    @staticmethod
+    def _eligible(stats: Mapping[str, object], thresholds: Mapping[str, float | int]) -> bool:
         probability = stats.get("target_probability_percent")
         out_of_sample_probability = stats.get("out_of_sample_target_probability_percent")
         return (
-            int(stats.get("trade_count") or 0) >= self.minimum_trade_count
-            and int(stats.get("out_of_sample_trade_count") or 0) >= self.minimum_oos_trade_count
+            int(stats.get("trade_count") or 0) >= int(thresholds["minimum_trade_count"])
+            and int(stats.get("out_of_sample_trade_count") or 0) >= int(thresholds["minimum_oos_trade_count"])
             and probability is not None
-            and float(probability) >= self.minimum_probability_percent
+            and float(probability) >= float(thresholds["minimum_probability_percent"])
             and out_of_sample_probability is not None
-            and float(out_of_sample_probability) >= self.minimum_probability_percent
+            and float(out_of_sample_probability) >= float(thresholds["minimum_probability_percent"])
         )
+
+    def _tier(self, stats: Mapping[str, object]) -> str | None:
+        if self._eligible(stats, self.primary_thresholds):
+            return "primary"
+        if self._eligible(stats, self.watch_thresholds):
+            return "watch"
+        return None
 
     @staticmethod
     def _levels(frame: pd.DataFrame, index: int, close: float) -> tuple[float | None, float | None]:
