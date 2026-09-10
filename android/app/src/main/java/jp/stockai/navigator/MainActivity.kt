@@ -1886,7 +1886,7 @@ private fun ShortPatternScreen(
         ) {
             item {
                 Text(
-                    "前日終値で抽出した短期の形です。確率は、同じ形の過去事例で翌営業日始値から${results.firstOrNull()?.holdingDays ?: 5}営業日以内に目標へ到達した割合です。朝の価格は確認用で、確率を再計算しません。",
+                    "前日終値で抽出した短期の形です。「先回り」は翌営業日始値で入る過去検証、「確認後」はシグナル足の高値／安値を終値で抜けてから翌始値で入る別検証です。日中の到達通知や自動売買は行いません。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1947,25 +1947,51 @@ private fun ShortPatternCard(result: ShortPatternResult, onClick: () -> Unit) {
             Text(result.companyName ?: result.code, style = MaterialTheme.typography.titleMedium)
             Text("${result.code}　${result.patternLabel}", style = MaterialTheme.typography.bodySmall)
             Text(result.patternSummary.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("先回り（シグナル翌営業日の始値で入る）", style = MaterialTheme.typography.labelLarge)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ResultMetric("${result.targetPercent.percentValue(false)}到達確率", result.targetProbabilityPercent.percentValue(false), Modifier.weight(1f))
-                ResultMetric("過去事例", "${result.tradeCount}件", Modifier.weight(1f))
-                ResultMetric("平均リターン", result.averageReturnPercent.percentValue(), Modifier.weight(1f))
+                ResultMetric("${result.targetPercent.percentValue(false)}到達確率", result.advanceStatistics.targetProbabilityPercent.percentValue(false), Modifier.weight(1f))
+                ResultMetric("過去事例", "${result.advanceStatistics.tradeCount}件", Modifier.weight(1f))
+                ResultMetric("平均リターン", result.advanceStatistics.averageReturnPercent.percentValue(), Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ResultMetric("最大逆行", result.maxAdversePercent.percentValue(), Modifier.weight(1f))
-                ResultMetric("直近検証", result.outOfSampleTargetProbabilityPercent.percentValue(false), Modifier.weight(1f))
+                ResultMetric("最大逆行", result.advanceStatistics.maxAdversePercent.percentValue(), Modifier.weight(1f))
+                ResultMetric("直近検証", result.advanceStatistics.outOfSampleTargetProbabilityPercent.percentValue(false), Modifier.weight(1f))
                 ResultMetric("基準終値", result.signalClose.yenValue(), Modifier.weight(1f))
+            }
+            val confirmation = result.confirmedStatistics
+            val confirmationLabel = if (result.direction == "long") "上抜け" else "下抜け"
+            Text("確認後（確認終値の翌営業日始値で入る）", style = MaterialTheme.typography.labelLarge)
+            if (confirmation != null && confirmation.isAvailable) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ResultMetric("${result.targetPercent.percentValue(false)}到達確率", confirmation.targetProbabilityPercent.percentValue(false), Modifier.weight(1f))
+                    ResultMetric("過去事例", "${confirmation.tradeCount}件", Modifier.weight(1f))
+                    ResultMetric("平均リターン", confirmation.averageReturnPercent.percentValue(), Modifier.weight(1f))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ResultMetric("最大逆行", confirmation.maxAdversePercent.percentValue(), Modifier.weight(1f))
+                    ResultMetric("直近検証", confirmation.outOfSampleTargetProbabilityPercent.percentValue(false), Modifier.weight(1f))
+                    ResultMetric("確認事例", "${confirmation.outOfSampleTradeCount}件", Modifier.weight(1f))
+                }
+            } else {
+                Text(
+                    "確認後の統計: 算出不可（十分な過去事例がありません）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            result.confirmationTriggerPrice?.let { trigger ->
+                val sessions = result.confirmationWindowSessions ?: 3
+                Text("確認価格: ${trigger.yenValue()}を${sessions}営業日以内に終値で$confirmationLabel", style = MaterialTheme.typography.bodySmall)
             }
             Text("目標価格: ${result.targetPrice.yenValue()} / $barrierLabel: ${barrier.yenValue()}", style = MaterialTheme.typography.bodySmall)
             val morning = result.morningPrice
             if (morning != null) {
                 Text(
-                    "朝の確認価格: ${morning.yenValue()} → 目標 ${result.morningTargetPrice.yenValue()}",
+                    "朝の参考価格: ${morning.yenValue()} → 目標 ${result.morningTargetPrice.yenValue()}",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Text(result.confirmationStatus.ifBlank { "前日終値で抽出。朝の確認待ち" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            Text(result.confirmationStatus.ifBlank { "前日終値で抽出。朝の参考価格は更新待ち" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

@@ -24,6 +24,8 @@ create table if not exists public.short_pattern_results (
   signal_close double precision not null check (signal_close > 0),
   target_percent double precision not null check (target_percent > 0 and target_percent <= 100),
   target_price double precision not null check (target_price > 0),
+  confirmation_trigger_price double precision,
+  confirmation_window_sessions integer,
   resistance_price double precision,
   support_price double precision,
   holding_days integer not null check (holding_days between 1 and 30),
@@ -81,14 +83,16 @@ begin
   delete from public.short_pattern_results where run_id=p_run_id;
   insert into public.short_pattern_results(
     run_id, position, code, company_name, pattern_id, pattern_label, direction, tier, pattern_summary,
-    signal_date, signal_close, target_percent, target_price, resistance_price, support_price, holding_days,
+    signal_date, signal_close, target_percent, target_price, confirmation_trigger_price, confirmation_window_sessions,
+    resistance_price, support_price, holding_days,
     target_probability_percent, trade_count, average_return_percent, median_return_percent, max_adverse_percent,
     out_of_sample_trade_count, out_of_sample_target_probability_percent, horizon_statistics,
     morning_price, morning_price_at, morning_target_price, confirmation_status
   )
   select p_run_id, r.position, r.code, coalesce(r.company_name,''), r.pattern_id, r.pattern_label,
     r.direction, r.tier, coalesce(r.pattern_summary,''), r.signal_date, r.signal_close, r.target_percent,
-    r.target_price, r.resistance_price, r.support_price, r.holding_days, r.target_probability_percent,
+    r.target_price, r.confirmation_trigger_price, r.confirmation_window_sessions, r.resistance_price, r.support_price,
+    r.holding_days, r.target_probability_percent,
     r.trade_count, r.average_return_percent, r.median_return_percent, r.max_adverse_percent,
     r.out_of_sample_trade_count, r.out_of_sample_target_probability_percent,
     coalesce(r.horizon_statistics, '{}'::jsonb), r.morning_price, r.morning_price_at,
@@ -96,7 +100,8 @@ begin
   from jsonb_to_recordset(p_results) as r(
     position integer, code text, company_name text, pattern_id text, pattern_label text, direction text, tier text,
     pattern_summary text, signal_date date, signal_close double precision, target_percent double precision,
-    target_price double precision, resistance_price double precision, support_price double precision,
+    target_price double precision, confirmation_trigger_price double precision, confirmation_window_sessions integer,
+    resistance_price double precision, support_price double precision,
     holding_days integer, target_probability_percent double precision, trade_count integer,
     average_return_percent double precision, median_return_percent double precision, max_adverse_percent double precision,
     out_of_sample_trade_count integer, out_of_sample_target_probability_percent double precision,

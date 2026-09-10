@@ -127,7 +127,8 @@ $publishFiles = @(
     "tests/test_pooled_backtest.py",
     "tests/test_short_horizon_patterns.py",
     "supabase/short_horizon_patterns_upgrade.sql",
-    "supabase/short_horizon_pattern_tier_upgrade.sql"
+    "supabase/short_horizon_pattern_tier_upgrade.sql",
+    "supabase/short_horizon_pattern_entry_timing_upgrade.sql"
 )
 & $git add -- $publishFiles
 if ($LASTEXITCODE -ne 0) { throw "Could not stage the maintenance files." }

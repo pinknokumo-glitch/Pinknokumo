@@ -40,13 +40,21 @@ class ShortHorizonPatternScanner:
         self.target_percent = float(self.config["target_percent"])
         self.primary_thresholds = self._thresholds("primary")
         self.watch_thresholds = self._thresholds("watch")
+        self.confirmed_minimum_trade_count = int(self.config.get("confirmed_minimum_trade_count", 15))
+        self.confirmed_minimum_oos_trade_count = int(self.config.get("confirmed_minimum_oos_trade_count", 3))
+        self.confirmed_window_sessions = int(self.config.get("confirmed_window_sessions", 3))
         if not self.horizons or self.display_horizon not in self.horizons:
             raise ValueError("display_horizon must be included in horizons")
+        if self.confirmed_window_sessions < 1:
+            raise ValueError("confirmed_window_sessions must be at least one")
 
     def scan(self, frames: Mapping[str, pd.DataFrame], names: Mapping[str, str] | None = None) -> list[dict[str, object]]:
         """Return currently active signals with pooled, chronological statistics."""
         prepared: dict[str, pd.DataFrame] = {}
         pooled: dict[tuple[str, int], list[dict[str, float | str]]] = {
+            (spec.pattern_id, horizon): [] for spec in PATTERNS for horizon in self.horizons
+        }
+        confirmed_pooled: dict[tuple[str, int], list[dict[str, float | str]]] = {
             (spec.pattern_id, horizon): [] for spec in PATTERNS for horizon in self.horizons
         }
         for code, source in frames.items():
@@ -56,14 +64,22 @@ class ShortHorizonPatternScanner:
             prepared[code] = frame
             for spec in PATTERNS:
                 for index in self._signal_indexes(frame, spec):
+                    confirmation_index = self._confirmation_index(frame, index, spec)
                     for horizon in self.horizons:
                         sample = self._outcome(frame, index, horizon, spec.direction)
                         if sample is not None:
                             pooled[(spec.pattern_id, horizon)].append(sample)
+                        confirmed_sample = self._confirmed_outcome(frame, confirmation_index, horizon, spec.direction)
+                        if confirmed_sample is not None:
+                            confirmed_pooled[(spec.pattern_id, horizon)].append(confirmed_sample)
 
         summaries = {
             key: self._summary(samples)
             for key, samples in pooled.items()
+        }
+        confirmed_summaries = {
+            key: self._summary(samples)
+            for key, samples in confirmed_pooled.items()
         }
         active: list[dict[str, object]] = []
         names = names or {}
@@ -79,7 +95,9 @@ class ShortHorizonPatternScanner:
                 latest = frame.iloc[current_index]
                 close = float(latest["close"])
                 resistance, support = self._levels(frame, current_index, close)
+                confirmation_trigger = float(latest["high"] if spec.direction == "long" else latest["low"])
                 target = close * (1 + self.target_percent / 100) if spec.direction == "long" else close * (1 - self.target_percent / 100)
+                confirmed_stats = confirmed_summaries[(spec.pattern_id, self.display_horizon)]
                 active.append({
                     "code": str(code),
                     "company_name": str(names.get(code, "")),
@@ -92,6 +110,8 @@ class ShortHorizonPatternScanner:
                     "signal_close": round(close, 4),
                     "target_percent": self.target_percent,
                     "target_price": round(target, 4),
+                    "confirmation_trigger_price": round(confirmation_trigger, 4),
+                    "confirmation_window_sessions": self.confirmed_window_sessions,
                     "resistance_price": resistance,
                     "support_price": support,
                     "holding_days": self.display_horizon,
@@ -103,7 +123,14 @@ class ShortHorizonPatternScanner:
                     "out_of_sample_trade_count": stats["out_of_sample_trade_count"],
                     "out_of_sample_target_probability_percent": stats["out_of_sample_target_probability_percent"],
                     "horizon_statistics": {
-                        str(horizon): summaries[(spec.pattern_id, horizon)] for horizon in self.horizons
+                        "horizons": {str(horizon): summaries[(spec.pattern_id, horizon)] for horizon in self.horizons},
+                        "entry_method_statistics": {
+                            "advance": stats,
+                            "confirmed_close": {
+                                **confirmed_stats,
+                                "is_available": self._confirmed_statistics_available(confirmed_stats),
+                            },
+                        },
                     },
                     "morning_price": None,
                     "morning_price_at": None,
@@ -195,7 +222,35 @@ class ShortHorizonPatternScanner:
         return False
 
     def _outcome(self, frame: pd.DataFrame, signal_index: int, horizon: int, direction: str) -> dict[str, float | str] | None:
-        entry_index = signal_index + 1
+        return self._outcome_from_entry(frame, signal_index + 1, horizon, direction, signal_index)
+
+    def _confirmation_index(self, frame: pd.DataFrame, signal_index: int, spec: PatternSpec) -> int | None:
+        """Find a close-based confirmation while the short-horizon setup is fresh."""
+        trigger = float(frame.iloc[signal_index]["high" if spec.direction == "long" else "low"])
+        last_index = min(len(frame) - 1, signal_index + self.confirmed_window_sessions)
+        for confirmation_index in range(signal_index + 1, last_index + 1):
+            close = float(frame.iloc[confirmation_index]["close"])
+            confirmed = close >= trigger if spec.direction == "long" else close <= trigger
+            if confirmed:
+                return confirmation_index
+        return None
+
+    def _confirmed_outcome(
+        self, frame: pd.DataFrame, confirmation_index: int | None, horizon: int, direction: str,
+    ) -> dict[str, float | str] | None:
+        """Use only a later completed close to confirm the signal, then enter next open.
+
+        Daily OHLC data cannot establish an intraday order of trigger and target.
+        This deliberately conservative definition avoids treating a same-day high/low
+        as an executable confirmation.
+        """
+        if confirmation_index is None:
+            return None
+        return self._outcome_from_entry(frame, confirmation_index + 1, horizon, direction, confirmation_index)
+
+    def _outcome_from_entry(
+        self, frame: pd.DataFrame, entry_index: int, horizon: int, direction: str, statistic_index: int,
+    ) -> dict[str, float | str] | None:
         end_index = entry_index + horizon - 1
         if end_index >= len(frame):
             return None
@@ -213,11 +268,17 @@ class ShortHorizonPatternScanner:
             terminal_return = (entry / end_close - 1) * 100
             adverse = (entry / float(path["high"].max()) - 1) * 100
         return {
-            "signal_date": str(pd.Timestamp(frame.iloc[signal_index]["trade_date"]).date()),
+            "signal_date": str(pd.Timestamp(frame.iloc[statistic_index]["trade_date"]).date()),
             "target_hit": float(target_hit),
             "terminal_return": terminal_return,
             "adverse": adverse,
         }
+
+    def _confirmed_statistics_available(self, stats: Mapping[str, object]) -> bool:
+        return (
+            int(stats.get("trade_count") or 0) >= self.confirmed_minimum_trade_count
+            and int(stats.get("out_of_sample_trade_count") or 0) >= self.confirmed_minimum_oos_trade_count
+        )
 
     def _summary(self, samples: list[dict[str, float | str]]) -> dict[str, float | int | None]:
         if not samples:

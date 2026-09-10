@@ -131,8 +131,14 @@ Preference writes remain restricted by RLS.
    tiers must then run `supabase/short_horizon_pattern_tier_upgrade.sql` once. It only
    adds the tier field and updates the existing publisher function; it does not reset
    results or alter saved screening preferences.
-16. Insert the initial preference while authenticated, or use the dashboard for the first row.
-17. Register the three server values above as GitHub Actions secrets.
+16. Existing projects adding the two entry-timing comparison must then run
+   `supabase/short_horizon_pattern_entry_timing_upgrade.sql` once. It adds only the
+   confirmation price/window display fields to the global pattern dataset. The
+   "advance" statistic uses the next session's open; "confirmed" requires a later
+   daily close to cross the signal candle high/low within three sessions, then uses
+   the following session's open. It is not an intraday execution or notification model.
+17. Insert the initial preference while authenticated, or use the dashboard for the first row.
+18. Register the three server values above as GitHub Actions secrets.
 
 Do not paste secret values into source files, chat logs, screenshots, or Android resources.
 # Long-horizon expectation backtests
