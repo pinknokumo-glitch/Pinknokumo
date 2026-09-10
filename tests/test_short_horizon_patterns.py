@@ -10,6 +10,7 @@ import yaml
 
 from modules.database import Database
 from modules.short_horizon_patterns import ShortHorizonPatternScanner
+from modules.short_horizon_patterns import PatternSpec
 from scripts.confirm_short_patterns import confirmation
 
 
@@ -126,6 +127,41 @@ class ShortHorizonPatternTestCase(unittest.TestCase):
         self.assertEqual(result["target_probability_percent"], 61.5)
         self.assertAlmostEqual(result["morning_target_price"], 106.09)
         self.assertEqual(result["confirmation_status"], "目標までに節目の突破が必要")
+
+    def test_confirmed_entry_requires_a_later_close_and_enters_next_open(self) -> None:
+        frame = pd.DataFrame({
+            "trade_date": pd.date_range("2026-01-01", periods=6),
+            "open": [100.0, 100.0, 101.0, 103.0, 104.0, 105.0],
+            "high": [102.0, 103.0, 105.0, 108.0, 109.0, 110.0],
+            "low": [99.0, 99.0, 100.0, 102.0, 103.0, 104.0],
+            "close": [101.0, 101.0, 103.0, 106.0, 108.0, 109.0],
+            "volume": [1000.0] * 6,
+        })
+        spec = PatternSpec("long_pullback_reversal", "long", "", "")
+        # Signal high is 102. Confirmation happens only at the later close 103.
+        self.assertEqual(self.scanner._confirmation_index(frame, 0, spec), 2)
+        outcome = self.scanner._confirmed_outcome(frame, 2, horizon=2, direction="long")
+        self.assertIsNotNone(outcome)
+        self.assertAlmostEqual(outcome["terminal_return"], (108 / 103 - 1) * 100)
+
+    def test_confirmed_entry_expires_when_the_trigger_is_not_reached_soon(self) -> None:
+        self.scanner.confirmed_window_sessions = 2
+        frame = pd.DataFrame({
+            "trade_date": pd.date_range("2026-01-01", periods=6),
+            "open": [100.0] * 6,
+            "high": [105.0, 103.0, 104.0, 106.0, 107.0, 108.0],
+            "low": [99.0] * 6,
+            "close": [100.0, 101.0, 102.0, 106.0, 107.0, 108.0],
+            "volume": [1000.0] * 6,
+        })
+        spec = PatternSpec("long_pullback_reversal", "long", "", "")
+        self.assertIsNone(self.scanner._confirmation_index(frame, 0, spec))
+
+    def test_confirmed_statistics_need_a_minimum_sample_before_display(self) -> None:
+        self.scanner.confirmed_minimum_trade_count = 15
+        self.scanner.confirmed_minimum_oos_trade_count = 3
+        self.assertFalse(self.scanner._confirmed_statistics_available({"trade_count": 14, "out_of_sample_trade_count": 3}))
+        self.assertTrue(self.scanner._confirmed_statistics_available({"trade_count": 15, "out_of_sample_trade_count": 3}))
 
     def test_local_results_are_replaced_atomically_by_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

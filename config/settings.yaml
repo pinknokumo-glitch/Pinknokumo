@@ -65,6 +65,12 @@ short_horizon_patterns:
   horizons: [3, 5, 10]
   display_horizon: 5
   target_percent: 3.0
+  # "Confirmed" means a later daily close crosses the signal candle high/low,
+  # followed by entry at the next session open. It is intentionally not sold as
+  # a real-time intraday execution model.
+  confirmed_minimum_trade_count: 15
+  confirmed_minimum_oos_trade_count: 3
+  confirmed_window_sessions: 3
   primary:
     minimum_trade_count: 30
     minimum_oos_trade_count: 6

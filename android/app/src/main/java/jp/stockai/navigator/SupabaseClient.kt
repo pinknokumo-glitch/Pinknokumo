@@ -117,6 +117,15 @@ data class RequestedBacktest(
     val downTargetPrice: Double? = null,
 )
 data class StockSearchHit(val code: String, val companyName: String)
+data class ShortPatternEntryStatistics(
+    val tradeCount: Int,
+    val targetProbabilityPercent: Double?,
+    val averageReturnPercent: Double?,
+    val maxAdversePercent: Double?,
+    val outOfSampleTradeCount: Int,
+    val outOfSampleTargetProbabilityPercent: Double?,
+    val isAvailable: Boolean,
+)
 data class ShortPatternResult(
     val signalDate: String,
     val position: Int,
@@ -129,6 +138,8 @@ data class ShortPatternResult(
     val signalClose: Double,
     val targetPercent: Double,
     val targetPrice: Double,
+    val confirmationTriggerPrice: Double?,
+    val confirmationWindowSessions: Int?,
     val resistancePrice: Double?,
     val supportPrice: Double?,
     val holdingDays: Int,
@@ -138,6 +149,8 @@ data class ShortPatternResult(
     val maxAdversePercent: Double?,
     val outOfSampleTradeCount: Int,
     val outOfSampleTargetProbabilityPercent: Double?,
+    val advanceStatistics: ShortPatternEntryStatistics,
+    val confirmedStatistics: ShortPatternEntryStatistics?,
     val morningPrice: Double?,
     val morningPriceAt: String?,
     val morningTargetPrice: Double?,
@@ -158,6 +171,17 @@ private fun JSONObject?.optionalInt(name: String): Int? {
     if (this == null || isNull(name)) return null
     return optInt(name)
 }
+
+private fun JSONObject.toShortPatternEntryStatistics(defaultAvailable: Boolean = true): ShortPatternEntryStatistics =
+    ShortPatternEntryStatistics(
+        tradeCount = optInt("trade_count", 0),
+        targetProbabilityPercent = optionalDouble("target_probability_percent"),
+        averageReturnPercent = optionalDouble("average_return_percent"),
+        maxAdversePercent = optionalDouble("max_adverse_percent"),
+        outOfSampleTradeCount = optInt("out_of_sample_trade_count", 0),
+        outOfSampleTargetProbabilityPercent = optionalDouble("out_of_sample_target_probability_percent"),
+        isAvailable = optBoolean("is_available", defaultAvailable),
+    )
 
 data class CloudPreference(
     val mode: String,
@@ -614,23 +638,39 @@ class SupabaseClient(
         val runId = URLEncoder.encode(run.getString("run_id"), Charsets.UTF_8.name())
         val basePath = "/rest/v1/short_pattern_results?run_id=eq.$runId"
         val select = "position,code,company_name,pattern_label,direction,tier,pattern_summary," +
-            "signal_close,target_percent,target_price,resistance_price,support_price,holding_days," +
+            "signal_close,target_percent,target_price,confirmation_trigger_price,confirmation_window_sessions," +
+            "resistance_price,support_price,holding_days," +
             "target_probability_percent,trade_count,average_return_percent,max_adverse_percent," +
-            "out_of_sample_trade_count,out_of_sample_target_probability_percent," +
+            "out_of_sample_trade_count,out_of_sample_target_probability_percent,horizon_statistics," +
             "morning_price,morning_price_at,morning_target_price,confirmation_status"
         val response = try {
             requestArray("GET", "$basePath&select=$select&order=direction.asc,position.asc&limit=200", token = session.accessToken)
         } catch (error: SupabaseRequestException) {
-            // The tier migration is applied independently. Keep existing results readable
-            // until it is applied, classifying them as observation candidates.
-            if (!error.message.orEmpty().contains("tier", ignoreCase = true)) throw error
+            // Migrations are applied independently. Keep older published results readable
+            // until their display-only fields are available.
+            val migrationField = error.message.orEmpty()
+            if (!migrationField.contains("tier", ignoreCase = true) &&
+                !migrationField.contains("confirmation_trigger_price", ignoreCase = true)
+            ) throw error
             requestArray(
-                "GET", "$basePath&select=${select.replace("tier,", "")}&order=direction.asc,position.asc&limit=200",
+                "GET", "$basePath&select=${select.replace("tier,", "").replace("confirmation_trigger_price,confirmation_window_sessions,", "")}&order=direction.asc,position.asc&limit=200",
                 token = session.accessToken,
             )
         }
         val results = (0 until response.length()).map { index ->
             val row = response.getJSONObject(index)
+            val methodStatistics = row.optJSONObject("horizon_statistics")
+                ?.optJSONObject("entry_method_statistics")
+            val advance = methodStatistics?.optJSONObject("advance")?.toShortPatternEntryStatistics()
+                ?: ShortPatternEntryStatistics(
+                    tradeCount = row.getInt("trade_count"),
+                    targetProbabilityPercent = row.optionalDouble("target_probability_percent"),
+                    averageReturnPercent = row.optionalDouble("average_return_percent"),
+                    maxAdversePercent = row.optionalDouble("max_adverse_percent"),
+                    outOfSampleTradeCount = row.optInt("out_of_sample_trade_count", 0),
+                    outOfSampleTargetProbabilityPercent = row.optionalDouble("out_of_sample_target_probability_percent"),
+                    isAvailable = true,
+                )
             ShortPatternResult(
                 signalDate = run.getString("signal_date"),
                 position = row.getInt("position"),
@@ -643,6 +683,8 @@ class SupabaseClient(
                 signalClose = row.getDouble("signal_close"),
                 targetPercent = row.getDouble("target_percent"),
                 targetPrice = row.getDouble("target_price"),
+                confirmationTriggerPrice = row.optionalDouble("confirmation_trigger_price"),
+                confirmationWindowSessions = row.optionalInt("confirmation_window_sessions"),
                 resistancePrice = row.optionalDouble("resistance_price"),
                 supportPrice = row.optionalDouble("support_price"),
                 holdingDays = row.getInt("holding_days"),
@@ -652,6 +694,8 @@ class SupabaseClient(
                 maxAdversePercent = row.optionalDouble("max_adverse_percent"),
                 outOfSampleTradeCount = row.optInt("out_of_sample_trade_count", 0),
                 outOfSampleTargetProbabilityPercent = row.optionalDouble("out_of_sample_target_probability_percent"),
+                advanceStatistics = advance,
+                confirmedStatistics = methodStatistics?.optJSONObject("confirmed_close")?.toShortPatternEntryStatistics(defaultAvailable = false),
                 morningPrice = row.optionalDouble("morning_price"),
                 morningPriceAt = row.optString("morning_price_at").takeIf { it.isNotBlank() },
                 morningTargetPrice = row.optionalDouble("morning_target_price"),

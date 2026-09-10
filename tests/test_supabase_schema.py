@@ -216,6 +216,15 @@ class SupabaseSchemaTests(unittest.TestCase):
         self.assertNotIn("drop table", sql)
         self.assertNotIn("screening_preferences", sql)
 
+    def test_short_pattern_entry_timing_upgrade_is_display_only(self) -> None:
+        sql = compact_sql("short_horizon_pattern_entry_timing_upgrade.sql")
+        self.assertIn("add column if not exists confirmation_trigger_price double precision", sql)
+        self.assertIn("add column if not exists confirmation_window_sessions integer", sql)
+        self.assertIn("coalesce(r.tier, 'watch')", sql)
+        self.assertNotIn("screening_preferences", sql)
+        self.assertNotIn("screening_results", sql)
+        self.assertNotIn("drop table", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
