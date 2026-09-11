@@ -1,0 +1,33 @@
+name: Export market-only research snapshot
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_run_id:
+        description: Evening snapshot run ID
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Restore exact evening snapshot
+        uses: actions/cache/restore@v5
+        with:
+          path: data/stockai.db
+          key: stockai-evening-analysis-${{ inputs.dataset_run_id }}
+          fail-on-cache-miss: true
+      - name: Export market data only
+        run: python scripts/export_market_research.py --source data/stockai.db --output reports/market-research.db
+      - uses: actions/upload-artifact@v6
+        with:
+          name: market-research-${{ inputs.dataset_run_id }}
+          path: reports/market-research.db
+          if-no-files-found: error
+          retention-days: 3
