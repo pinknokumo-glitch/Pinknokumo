@@ -22,6 +22,28 @@ FEATURES = (
 )
 
 
+def normalize_adjusted_ohlcv(prices: pd.DataFrame) -> pd.DataFrame:
+    """Normalize historic OHLC for splits using the supplied adjusted close.
+
+    A long-horizon pivot study cannot treat a stock split as a price collapse.
+    Missing or invalid adjustment data is rejected instead of silently using
+    incompatible raw and adjusted price histories.
+    """
+    frame = prices.copy()
+    if "adjusted_close" not in frame.columns:
+        raise ValueError("Missing adjusted_close for long-horizon research")
+    raw_close = pd.to_numeric(frame["close"], errors="raise")
+    adjusted = pd.to_numeric(frame["adjusted_close"], errors="raise")
+    ratio = adjusted / raw_close
+    if not ratio.map(lambda value: math.isfinite(float(value)) and value > 0).all():
+        raise ValueError("Invalid adjusted_close for long-horizon research")
+    for column in ("open", "high", "low", "close"):
+        frame[column] = pd.to_numeric(frame[column], errors="raise") * ratio
+    # Split-adjusted volume avoids an artificial volume surge at a split.
+    frame["volume"] = pd.to_numeric(frame["volume"], errors="raise") / ratio
+    return frame
+
+
 def _rci(close: pd.Series, period: int) -> pd.Series:
     """Rank-correlation index, +100 for a perfectly rising window."""
     def calculate(values: pd.Series) -> float:
@@ -32,7 +54,7 @@ def _rci(close: pd.Series, period: int) -> pd.Series:
 
 
 def daily_features(prices: pd.DataFrame, indicator_config: dict) -> pd.DataFrame:
-    frame = prices.copy().sort_values("trade_date").reset_index(drop=True)
+    frame = normalize_adjusted_ohlcv(prices).sort_values("trade_date").reset_index(drop=True)
     frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="raise")
     for column in ("open", "high", "low", "close", "volume"):
         frame[column] = pd.to_numeric(frame[column], errors="raise")

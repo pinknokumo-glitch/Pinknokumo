@@ -2,7 +2,7 @@ import unittest
 import pandas as pd
 import yaml
 
-from modules.dow_peak_research import _monthly_swings, daily_features, analyze_universe
+from modules.dow_peak_research import _monthly_swings, daily_features, analyze_universe, normalize_adjusted_ohlcv
 
 
 class DowPeakResearchTests(unittest.TestCase):
@@ -21,7 +21,17 @@ class DowPeakResearchTests(unittest.TestCase):
         close += pd.Series(range(len(dates)), dtype="float64") * .01
         value = pd.Series(range(len(dates)), dtype="float64")
         return pd.DataFrame({"trade_date": dates, "open": close - .2, "high": close + 1,
-                             "low": close - 1, "close": close, "volume": 1000 + value})
+                             "low": close - 1, "close": close, "adjusted_close": close,
+                             "volume": 1000 + value})
+
+    def test_adjustment_removes_split_gap_from_ohlc_and_volume(self):
+        prices = self.prices().iloc[:2].copy()
+        prices.loc[0, ["open", "high", "low", "close", "adjusted_close", "volume"]] = [100, 110, 90, 100, 50, 1000]
+        prices.loc[1, ["open", "high", "low", "close", "adjusted_close", "volume"]] = [50, 55, 45, 50, 50, 2000]
+        adjusted = normalize_adjusted_ohlcv(prices)
+        self.assertEqual(adjusted.loc[0, "high"], 55)
+        self.assertEqual(adjusted.loc[0, "volume"], 2000)
+        self.assertEqual(adjusted.loc[1, "close"], 50)
 
     def test_daily_features_produce_requested_oscillators(self):
         daily = daily_features(self.prices(), self.config)
