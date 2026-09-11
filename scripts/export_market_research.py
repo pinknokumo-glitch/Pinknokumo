@@ -16,6 +16,11 @@ def export(source: Path, output: Path) -> dict:
         if not codes:
             raise ValueError("Evening universe is empty")
         # Deliberate column allow-list. No preferences, tokens, requests or user IDs.
+        # Sector metadata is market reference data and is needed only for aggregate
+        # research breakdowns; it does not identify an app user.
+        sectors = list(src.execute("""SELECT code, sector_17_name, sector_33_name,
+            market_name, scale_category FROM master_stock
+            WHERE code IN (SELECT code FROM evening_analysis_codes) ORDER BY code"""))
         cursor = src.execute("""SELECT code, trade_date, open, high, low, close,
             adjusted_close, volume, dividends, stock_splits FROM price_daily
             WHERE code IN (SELECT code FROM evening_analysis_codes)
@@ -24,6 +29,10 @@ def export(source: Path, output: Path) -> dict:
         with closing(sqlite3.connect(output)) as dst, dst:
             dst.execute("CREATE TABLE evening_analysis_codes (code TEXT PRIMARY KEY)")
             dst.executemany("INSERT INTO evening_analysis_codes VALUES (?)", [(code,) for code in codes])
+            dst.execute("""CREATE TABLE master_stock (code TEXT PRIMARY KEY,
+                sector_17_name TEXT, sector_33_name TEXT, market_name TEXT,
+                scale_category TEXT)""")
+            dst.executemany("INSERT INTO master_stock VALUES (?,?,?,?,?)", sectors)
             dst.execute("""CREATE TABLE price_daily (code TEXT, trade_date TEXT,
                 open REAL, high REAL, low REAL, close REAL, adjusted_close REAL,
                 volume REAL, dividends REAL, stock_splits REAL,

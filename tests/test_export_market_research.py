@@ -13,6 +13,9 @@ class MarketExportTests(unittest.TestCase):
             with closing(sqlite3.connect(source)) as c, c:
                 c.executescript("""CREATE TABLE evening_analysis_codes(code TEXT);
                 INSERT INTO evening_analysis_codes VALUES ('1234');
+                CREATE TABLE master_stock(code TEXT PRIMARY KEY,sector_17_name TEXT,
+                sector_33_name TEXT,market_name TEXT,scale_category TEXT);
+                INSERT INTO master_stock VALUES ('1234','製造業','電気機器','Prime','TOPIX Mid400');
                 CREATE TABLE private_settings(secret TEXT);
                 INSERT INTO private_settings VALUES ('not for export');
                 CREATE TABLE price_daily(code TEXT,trade_date TEXT,open REAL,high REAL,
@@ -25,7 +28,9 @@ class MarketExportTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
             with closing(sqlite3.connect(output)) as c:
                 self.assertEqual({r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")},
-                                 {'price_daily','evening_analysis_codes'})
+                                 {'price_daily','evening_analysis_codes','master_stock'})
+                self.assertEqual(c.execute("SELECT sector_33_name FROM master_stock WHERE code='1234'").fetchone()[0],
+                                 '電気機器')
             with self.assertRaises(FileExistsError):
                 export(source, output)
 
