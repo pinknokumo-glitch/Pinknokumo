@@ -20,7 +20,7 @@ def main() -> int:
     args = parser.parse_args()
     with sqlite3.connect(args.database.resolve().as_uri() + "?mode=ro", uri=True) as connection:
         codes = [str(row[0]) for row in connection.execute("SELECT code FROM evening_analysis_codes ORDER BY code")]
-        frames = {code: pd.read_sql_query("SELECT trade_date,open,high,low,close,volume FROM price_daily WHERE code=? ORDER BY trade_date", connection, params=[code]) for code in codes}
+        frames = {code: pd.read_sql_query("SELECT trade_date,open,high,low,close,adjusted_close,volume FROM price_daily WHERE code=? ORDER BY trade_date", connection, params=[code]) for code in codes}
     config = yaml.safe_load((ROOT / "config/indicators.yaml").read_text(encoding="utf-8"))
     result = analyze_universe(frames, config)
     args.output.parent.mkdir(parents=True, exist_ok=True)
