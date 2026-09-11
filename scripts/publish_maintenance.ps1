@@ -28,6 +28,10 @@ $env:PYTHONWARNINGS = "ignore::DeprecationWarning"
 if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $publishFiles = @(
+    ".github/workflows/dow-peak-forecast-validation.yml",
+    "modules/dow_peak_forecast_validation.py",
+    "scripts/run_dow_peak_forecast_validation.py",
+    "tests/test_dow_peak_forecast_validation.py",
     ".github/workflows/dow-peak-research.yml",
     "modules/dow_peak_research.py",
     "scripts/run_dow_peak_research.py",
