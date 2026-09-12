@@ -28,6 +28,10 @@ $env:PYTHONWARNINGS = "ignore::DeprecationWarning"
 if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $publishFiles = @(
+    ".github/workflows/nonpeak-confluence-research.yml",
+    "modules/nonpeak_confluence_research.py",
+    "scripts/run_nonpeak_confluence_research.py",
+    "tests/test_nonpeak_confluence_research.py",
     ".github/workflows/structural-peak-research.yml",
     "modules/structural_peak_research.py",
     "scripts/run_structural_peak_research.py",
