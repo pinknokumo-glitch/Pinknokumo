@@ -12,6 +12,7 @@ from typing import Any
 
 import pandas as pd
 
+from modules.dow_peak_research import normalize_adjusted_ohlcv
 from modules.multitimeframe_peak_research import _features, _resample, _snapshot, _summarize
 from modules.structural_peak_research import _monthly_roles
 
@@ -85,7 +86,12 @@ def analyze_monthly_peak_conditions(frames: dict[str, pd.DataFrame], indicator_c
         try:
             # Aggregate raw OHLCV first.  Indicators are then calculated only
             # from the completed monthly bars, never from daily indicators.
-            monthly = _features(_resample(prices, "ME"), indicator_config)
+            monthly_input = normalize_adjusted_ohlcv(prices)
+            monthly_input["trade_date"] = pd.to_datetime(monthly_input["trade_date"], errors="raise")
+            # The OHLCV values are now split-adjusted.  Set the companion close
+            # to the same scale so _features does not apply the adjustment twice.
+            monthly_input["adjusted_close"] = monthly_input["close"]
+            monthly = _features(_resample(monthly_input, "ME"), indicator_config)
             nodes = {side: _monthly_roles(monthly, side) for side in ("bottom", "top")}
         except (KeyError, TypeError, ValueError) as error:
             failures.append({"code": str(code), "error": str(error)})

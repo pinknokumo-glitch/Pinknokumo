@@ -48,3 +48,10 @@ class MonthlyPeakConditionResearchTests(unittest.TestCase):
         self.assertGreater(peak["sample_count"], 0)
         self.assertIn("rsi_14_extreme", peak["condition_rates"])
         self.assertEqual(result["method"]["scope"], "monthly bars only; weekly and daily indicators are not calculated or included")
+
+    def test_report_accepts_database_style_text_dates(self):
+        prices = self.prices()
+        prices["trade_date"] = prices["trade_date"].dt.strftime("%Y-%m-%d")
+        result = analyze_monthly_peak_conditions({"1234": prices}, self.config)
+        self.assertEqual(result["usable_stock_count"], 1)
+        self.assertFalse(result["failures"])
