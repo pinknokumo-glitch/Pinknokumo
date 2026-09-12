@@ -28,6 +28,10 @@ $env:PYTHONWARNINGS = "ignore::DeprecationWarning"
 if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
 
 $publishFiles = @(
+    ".github/workflows/structural-peak-research.yml",
+    "modules/structural_peak_research.py",
+    "scripts/run_structural_peak_research.py",
+    "tests/test_structural_peak_research.py",
     ".github/workflows/complete-condition-precision.yml",
     "modules/complete_condition_precision.py",
     "scripts/run_complete_condition_precision.py",
