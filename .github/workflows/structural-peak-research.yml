@@ -1,4 +1,4 @@
-name: Research structural red and yellow peak roles
+name: Research monthly range and trend peak roles
 on:
   workflow_dispatch:
     inputs:
@@ -31,7 +31,7 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Export market data only
         run: python scripts/export_market_research.py --source data/stockai.db --output reports/market-research.db
-      - name: Analyze structural red and yellow peak roles
+      - name: Analyze monthly range and trend peak roles
         run: python scripts/run_structural_peak_research.py --database reports/market-research.db --output reports/structural-peak-research.json
       - uses: actions/upload-artifact@v6
         with:

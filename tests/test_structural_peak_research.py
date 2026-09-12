@@ -3,7 +3,7 @@ import unittest
 import pandas as pd
 import yaml
 
-from modules.structural_peak_research import _monthly_roles, analyze_structural_peaks
+from modules.structural_peak_research import _monthly_regime, _monthly_roles, analyze_structural_peaks
 
 
 class StructuralPeakResearchTests(unittest.TestCase):
@@ -44,3 +44,36 @@ class StructuralPeakResearchTests(unittest.TestCase):
                          {"monthly_structural_bar", "weekly_bar_containing_monthly_extreme", "daily_monthly_extreme"})
         self.assertIn("weekly_structural_match_rate_percent", result["summary"][0])
         self.assertIn("retest_group", result["summary"][0])
+        self.assertIn("monthly_regime", result["summary"][0])
+
+    def test_monthly_regime_recognizes_range_and_breakout(self):
+        dates = pd.date_range("2018-01-31", periods=26, freq="ME")
+        monthly = pd.DataFrame({
+            "trade_date": dates,
+            "high": [110, 100, 111, 99, 109, 98, 110, 99, 111, 98, 110, 99,
+                     111, 98, 110, 99, 111, 98, 110, 99, 111, 98, 130, 100, 90, 91],
+            "low": [90, 80, 89, 79, 90, 78, 89, 79, 90, 78, 89, 79,
+                     90, 78, 89, 79, 90, 78, 89, 79, 90, 78, 100, 80, 75, 76],
+            "close": [100] * 22 + [125, 90, 85, 86],
+        })
+        tops = _monthly_roles(monthly, "top")
+        bottoms = _monthly_roles(monthly, "bottom")
+        range_top = next(node for node in tops if node["index"] == 16)
+        self.assertEqual(_monthly_regime(monthly, "top", range_top, tops, bottoms), "range")
+        breakout = next(node for node in tops if node["index"] == 22)
+        self.assertEqual(_monthly_regime(monthly, "top", breakout, tops, bottoms), "range_breakout_up")
+
+    def test_range_keeps_retested_boundaries_when_internal_swings_exist(self):
+        dates = pd.date_range("2018-01-31", periods=24, freq="ME")
+        monthly = pd.DataFrame({
+            "trade_date": dates,
+            "high": [110, 100, 111, 99, 106, 98, 110, 99, 105, 98, 111, 99,
+                     106, 98, 110, 99, 105, 98, 111, 99, 106, 98, 90, 91],
+            "low": [90, 80, 89, 79, 84, 78, 89, 79, 84, 78, 90, 79,
+                    84, 78, 89, 79, 84, 78, 90, 79, 84, 78, 75, 76],
+            "close": [100] * 24,
+        })
+        tops = _monthly_roles(monthly, "top")
+        bottoms = _monthly_roles(monthly, "bottom")
+        node = next(item for item in tops if item["index"] == 18)
+        self.assertEqual(_monthly_regime(monthly, "top", node, tops, bottoms), "range")

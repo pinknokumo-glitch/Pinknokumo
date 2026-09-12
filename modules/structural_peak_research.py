@@ -1,9 +1,8 @@
-"""Research structural red/yellow swing roles across monthly, weekly and daily bars.
+"""Research monthly trend/range peak roles across monthly, weekly and daily bars.
 
 This is a descriptive research classifier, not a live chart-pattern signal.
-It uses every available monthly local swing, then separates multi-timeframe
-red candidates from yellow secondary/range candidates without a fixed
-long-horizon cutoff.
+It uses every available monthly local swing, then classifies its preceding
+monthly context as a trend, a repeatedly tested range, or a range breakout.
 """
 from __future__ import annotations
 
@@ -20,6 +19,8 @@ WEEKLY_RADIUS = 2
 DAILY_RADIUS = 5
 RETEST_MONTHS = 18
 RETEST_TOLERANCE_PERCENT = 3.0
+RANGE_MIN_WIDTH_PERCENT = 6.0
+RANGE_BREAKOUT_PERCENT = 2.0
 
 
 def _pivots(frame: pd.DataFrame, side: str, radius: int) -> list[dict[str, Any]]:
@@ -57,6 +58,72 @@ def _monthly_roles(monthly: pd.DataFrame, side: str) -> list[dict[str, Any]]:
     return nodes
 
 
+def _range_levels(
+    top_nodes: list[dict[str, Any]], bottom_nodes: list[dict[str, Any]], pivot_index: int,
+) -> tuple[float, float] | None:
+    """Return established support/resistance using only pivots before this month."""
+    start = pivot_index - RETEST_MONTHS
+    tops = [node["price"] for node in top_nodes if start <= node["index"] < pivot_index]
+    bottoms = [node["price"] for node in bottom_nodes if start <= node["index"] < pivot_index]
+    resistance = _retested_level(tops)
+    support = _retested_level(bottoms)
+    if resistance is None or support is None:
+        return None
+    if (resistance / max(support, 1e-9) - 1) * 100 < RANGE_MIN_WIDTH_PERCENT:
+        return None
+    return support, resistance
+
+
+def _retested_level(prices: list[float]) -> float | None:
+    """Find a repeated support/resistance cluster without rejecting internal swings."""
+    candidates: list[tuple[int, float]] = []
+    for price in prices:
+        cluster = [other for other in prices if _within_percent(price, other)]
+        if len(cluster) >= 2:
+            candidates.append((len(cluster), float(pd.Series(cluster).median())))
+    if not candidates:
+        return None
+    # Prefer the most repeatedly tested level.  Price is only a deterministic
+    # tie breaker; no future date or outcome is used.
+    return max(candidates, key=lambda item: (item[0], item[1]))[1]
+
+
+def _trend_context(top_nodes: list[dict[str, Any]], bottom_nodes: list[dict[str, Any]], pivot_index: int) -> str:
+    """Classify the preceding Dow-style swing sequence without future prices."""
+    start = pivot_index - RETEST_MONTHS
+    tops = [node for node in top_nodes if start <= node["index"] <= pivot_index]
+    bottoms = [node for node in bottom_nodes if start <= node["index"] <= pivot_index]
+    if len(tops) < 2 or len(bottoms) < 2:
+        return "mixed_or_insufficient"
+    newest_top, prior_top = tops[-1]["price"], tops[-2]["price"]
+    newest_bottom, prior_bottom = bottoms[-1]["price"], bottoms[-2]["price"]
+    if newest_top > prior_top and newest_bottom > prior_bottom:
+        return "uptrend"
+    if newest_top < prior_top and newest_bottom < prior_bottom:
+        return "downtrend"
+    return "mixed_or_insufficient"
+
+
+def _monthly_regime(
+    monthly: pd.DataFrame,
+    side: str,
+    node: dict[str, Any],
+    top_nodes: list[dict[str, Any]],
+    bottom_nodes: list[dict[str, Any]],
+) -> str:
+    """Return range first, then a trend label; breakout uses only prior range levels."""
+    levels = _range_levels(top_nodes, bottom_nodes, node["index"])
+    close = float(monthly.iloc[node["index"]].close)
+    if levels is not None:
+        support, resistance = levels
+        if side == "top" and close >= resistance * (1 + RANGE_BREAKOUT_PERCENT / 100):
+            return "range_breakout_up"
+        if side == "bottom" and close <= support * (1 - RANGE_BREAKOUT_PERCENT / 100):
+            return "range_breakout_down"
+        return "range"
+    return _trend_context(top_nodes, bottom_nodes, node["index"])
+
+
 def _rate(rows: list[dict[str, Any]], key: str) -> float | None:
     return round(100 * sum(bool(row[key]) for row in rows) / len(rows), 2) if rows else None
 
@@ -83,10 +150,11 @@ def analyze_structural_peaks(frames: dict[str, pd.DataFrame], indicator_config: 
             continue
         weekly_periods = {row.trade_date.to_period("W-FRI"): row for _, row in weekly.iterrows()}
         daily_dates = {str(row.trade_date.date()): row for _, row in daily.iterrows()}
+        monthly_nodes = {side: _monthly_roles(monthly, side) for side in ("top", "bottom")}
         for side in ("top", "bottom"):
             weekly_nodes = {node["date"] for node in _pivots(weekly, side, WEEKLY_RADIUS)}
             daily_nodes = {node["date"] for node in _pivots(daily, side, DAILY_RADIUS)}
-            for node in _monthly_roles(monthly, side):
+            for node in monthly_nodes[side]:
                 month_row = monthly.iloc[node["index"]]
                 month_period = month_row.trade_date.to_period("M")
                 in_month = daily.loc[daily.trade_date.dt.to_period("M") == month_period]
@@ -100,28 +168,32 @@ def analyze_structural_peaks(frames: dict[str, pd.DataFrame], indicator_config: 
                     continue
                 weekly_match = str(week_row.trade_date.date()) in weekly_nodes
                 daily_match = peak_date in daily_nodes
-                role = "red_multitimeframe" if weekly_match and daily_match else "yellow_secondary"
+                monthly_regime = _monthly_regime(
+                    monthly, side, node, monthly_nodes["top"], monthly_nodes["bottom"],
+                )
                 retest_group = "retested_price_level" if node["retest_count"] else "single_price_level"
                 for stage, row in (("monthly_structural_bar", month_row),
                                    ("weekly_bar_containing_monthly_extreme", week_row),
                                    ("daily_monthly_extreme", daily_dates[peak_date])):
-                    rows.append({"code": str(code), "side": side, "role": role,
+                    rows.append({"code": str(code), "side": side, "monthly_regime": monthly_regime,
                                  "retest_group": retest_group, "retest_count": node["retest_count"], "stage": stage,
                                  "monthly_pivot_month": str(month_period), "peak_date": peak_date,
                                  "weekly_structural_match": weekly_match,
                                  "daily_structural_match": daily_match, "values": _snapshot(row)})
     groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        groups[(row["side"], row["role"], row["retest_group"], row["stage"])].append(row)
-    summary = [{"side": side, "role": role, "retest_group": retest_group, "stage": stage, **_summarize_role(items)}
-               for (side, role, retest_group, stage), items in sorted(groups.items())]
+        groups[(row["side"], row["monthly_regime"], row["retest_group"], row["stage"])].append(row)
+    summary = [{"side": side, "monthly_regime": monthly_regime, "retest_group": retest_group, "stage": stage, **_summarize_role(items)}
+               for (side, monthly_regime, retest_group, stage), items in sorted(groups.items())]
     return {"method": {
-        "red_multitimeframe": "every monthly local swing whose actual extreme is also a same-side weekly and daily local swing",
-        "yellow_secondary": "every other monthly local swing; used as the range/shoulder/partial-alignment comparison group",
+        "monthly_regime": "each peak is classified from only the preceding 18 months of local monthly swings; the entire available chart history is evaluated at every eligible month",
+        "range": "at least two prior highs and two prior lows within 3% of their respective median levels, with support/resistance at least 6% apart",
+        "range_breakout": "a top/bottom whose monthly close is at least 2% beyond the prior established range boundary",
+        "trend": "the latest two monthly highs and lows both rise (uptrend) or both fall (downtrend); otherwise mixed_or_insufficient",
         "retested_price_level": "a same-side monthly swing within 18 months and within 3% in price; this is the double/triple or range-level axis, not a named-pattern label",
         "white_internal_nodes": "not a primary result group; internal turning points remain implicit in the pivot sequence",
         "monthly_pivot": "every local high/low across two completed months on each side, across the full available chart history; equal but separated highs/lows are retained",
-        "weekly_daily_match": "whether the weekly/daily bar containing the actual monthly high/low is itself a local pivot using two weeks/five sessions on each side",
+        "weekly_daily_match": "reported for transparency only; monthly local pivots naturally tend to contain short-horizon pivots, so it is not used as the regime classifier",
         "warning": "This catalog does not yet label named head-and-shoulders, flag, wedge or triangle patterns. It first tests structural swing roles objectively.",
     }, "universe_stock_count": len(frames), "usable_stock_count": len(frames) - len(failures),
        "failures": failures, "summary": summary}
