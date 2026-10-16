@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Verify market-only export safeguards
+        run: python -m unittest discover -s tests -p test_export_market_research.py -v
       - name: Restore exact evening snapshot
         uses: actions/cache/restore@v5
         with:
@@ -24,7 +26,10 @@ jobs:
           key: stockai-evening-analysis-${{ inputs.dataset_run_id }}
           fail-on-cache-miss: true
       - name: Export market data only
-        run: python scripts/export_market_research.py --source data/stockai.db --output reports/market-research.db
+        run: >-
+          python scripts/export_market_research.py
+          --source data/stockai.db --output reports/market-research.db
+          --include-codes config/research_frozen_codes_2026-09-18.json
       - uses: actions/upload-artifact@v6
         with:
           name: market-research-${{ inputs.dataset_run_id }}
